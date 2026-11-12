@@ -27,7 +27,7 @@ function shell(){
  }
  const footer=$('.footer');
  if(footer){
-  footer.innerHTML='<a class="brand site-brand" href="/"><img class="brand-logo" src="/assets/lumekh-logo.png" alt=""><span class="brand-copy"><strong>LuMekH™</strong><small>CREATIVE SERVICES</small></span></a><span>Products and services</span><div class="footer-links"><a href="/store.html">Products</a><a href="/appointments.html">Services</a><a href="/account.html">My account</a></div><button id="install-app" class="install-app-btn" type="button">Install LuMekH app</button><a class="admin-footer-link" href="/admin/login.html">Admin Login</a><span>© 2026 LuMekH™</span>';
+  footer.innerHTML='<a class="brand site-brand footer-brand" href="/" aria-label="LuMekH home"><img class="brand-logo" src="/assets/lumekh-logo.png" alt=""><span class="brand-copy"><strong>LuMekH™</strong><small>CREATIVE SERVICES</small></span></a><div class="footer-actions"><button id="install-app" class="install-app-btn" type="button">Install LuMekH app</button><a class="admin-footer-link" href="/admin/login.html">Admin Login</a></div><p class="footer-copy">© 2026 LuMekH™. All rights reserved.</p>';
   const install=$('#install-app');
   install?.addEventListener('click',async()=>{
    if(deferredPwaPrompt){deferredPwaPrompt.prompt();await deferredPwaPrompt.userChoice;deferredPwaPrompt=null;return}
