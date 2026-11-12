@@ -502,7 +502,7 @@ html{scroll-behavior:smooth}
 .services-filterbar label>span{font-size:11px;font-weight:700;color:#66666e;padding-left:3px}
 .service-search{position:relative}
 .service-search>span{position:absolute;left:13px;top:50%;transform:translateY(-50%);font-size:21px;line-height:1;color:#71717a}
-.services-filterbar input,.services-filterbar select{width:100%;height:46px;padding:0 14px;border-radius:999px;border:1px solid #dedee3;background:#fff;color:#16161a;font:500 14px inherit;outline:none}
+.services-filterbar input,.services-filterbar select{width:100%;height:46px;padding:0 14px;border-radius:999px;border:1px solid #dedee3;background:#fff;color:#16161a;font:500 14px/1.4 Manrope,sans-serif;outline:none}
 .services-filterbar input{padding-left:40px}
 .services-filterbar input:focus,.services-filterbar select:focus{border-color:#17171b;box-shadow:0 0 0 3px rgba(20,20,24,.08)}
 .service-list-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
