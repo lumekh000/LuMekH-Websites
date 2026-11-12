@@ -389,3 +389,5 @@ nav{width:100%;justify-content:flex-start;gap:4px}
 .integration-note{min-height:230px}.booking-time-field[hidden],[hidden]{display:none!important}
 @media(max-width:900px){.service-admin-grid,.service-setup-grid{grid-template-columns:1fr}.booking-layout>section{position:static}}
 @media(max-width:620px){.service-tabs{margin:8px -2px 16px;border-radius:14px}.service-tabs button{padding:9px 13px}.service-admin-row{align-items:flex-start;flex-direction:column}.service-row-actions{justify-content:flex-start}.booking-date-actions{align-items:stretch}.range-add,.range-add>div{width:100%}.range-add input{flex:1;max-width:none}.booking-card,.service-card{gap:10px}.service-card{flex-direction:column}.service-card .price{white-space:normal}.booking-date-row .btn{padding-inline:10px}}
+
+.admin-footer-link{font-size:11px;font-weight:600;color:#8b8b91;opacity:.78;transition:color .18s,opacity .18s}.admin-footer-link:hover{color:#e57b96;opacity:1}
