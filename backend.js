@@ -608,6 +608,15 @@ async function api(req, res, url) {
       const [rows] = await dbPool.query("SELECT p.id,p.name,p.short_description,p.description,p.price,p.sale_price,p.stock,p.image_url,p.sku,p.active,p.featured,p.product_type,p.category_id,p.download_media_id,p.created_at,c.name AS category_name,(SELECT COUNT(*) FROM product_variants v WHERE v.product_id=p.id AND v.active=1) AS variant_count,(SELECT COUNT(*) FROM product_images i WHERE i.product_id=p.id) AS image_count FROM products p LEFT JOIN product_categories c ON c.id=p.category_id ORDER BY p.created_at DESC LIMIT 300");
       return sendJson(res,200,{products:rows});
     }
+    const productDetailMatch=route.match(/^\/api\/admin\/products\/(\d+)$/);
+    if(req.method==="GET"&&productDetailMatch){
+      const id=Number(productDetailMatch[1]);
+      const [[product]]=await dbPool.execute("SELECT id,name,short_description,description,price,sale_price,stock,image_url,sku,active,featured,product_type,category_id,weight_grams,download_media_id FROM products WHERE id=? LIMIT 1",[id]);
+      if(!product)return sendError(res,404,"Product not found.");
+      const [images]=await dbPool.execute("SELECT id,image_url,alt_text FROM product_images WHERE product_id=? ORDER BY sort_order,id",[id]);
+      const [variants]=await dbPool.execute("SELECT id,sku,name,attributes_json,price,stock FROM product_variants WHERE product_id=? ORDER BY id",[id]);
+      return sendJson(res,200,{product,images,variants});
+    }
     const productRoute = route.match(/^\/api\/admin\/products(?:\/(\d+))?$/);
     if ((req.method==="POST"&&route==="/api/admin/products") || (req.method==="PATCH"&&productRoute&&productRoute[1])) {
       const body=await readJson(req);
