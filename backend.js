@@ -40,6 +40,7 @@ const schema = [
   "CREATE TABLE IF NOT EXISTS product_categories (id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, name VARCHAR(120) NOT NULL, slug VARCHAR(150) NOT NULL UNIQUE, description VARCHAR(1000) NOT NULL DEFAULT '', active TINYINT(1) NOT NULL DEFAULT 1, sort_order INT NOT NULL DEFAULT 0, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
   "CREATE TABLE IF NOT EXISTS product_variants (id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, product_id BIGINT UNSIGNED NOT NULL, sku VARCHAR(64) NULL UNIQUE, name VARCHAR(160) NOT NULL, attributes_json TEXT NOT NULL, price DECIMAL(10,2) NULL, stock INT NULL, active TINYINT(1) NOT NULL DEFAULT 1, INDEX idx_variant_product (product_id,active), CONSTRAINT fk_variant_product FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
   "CREATE TABLE IF NOT EXISTS product_images (id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, product_id BIGINT UNSIGNED NOT NULL, image_url VARCHAR(1000) NOT NULL, alt_text VARCHAR(180) NOT NULL DEFAULT '', sort_order INT NOT NULL DEFAULT 0, INDEX idx_product_images (product_id,sort_order), CONSTRAINT fk_product_image_product FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+  "CREATE TABLE IF NOT EXISTS media_assets (id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, file_name VARCHAR(255) NOT NULL, mime_type VARCHAR(120) NOT NULL, file_size INT UNSIGNED NOT NULL, is_private TINYINT(1) NOT NULL DEFAULT 0, data MEDIUMBLOB NOT NULL, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, INDEX idx_media_private (is_private,created_at)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
   "CREATE TABLE IF NOT EXISTS coupons (id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, code VARCHAR(80) NOT NULL UNIQUE, discount_type ENUM('percent','fixed_cart','fixed_product') NOT NULL DEFAULT 'percent', amount DECIMAL(10,2) NOT NULL, minimum_amount DECIMAL(10,2) NOT NULL DEFAULT 0, usage_limit INT NULL, used_count INT NOT NULL DEFAULT 0, expires_at DATETIME NULL, active TINYINT(1) NOT NULL DEFAULT 1, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
   "CREATE TABLE IF NOT EXISTS coupon_usage (id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, coupon_id BIGINT UNSIGNED NOT NULL, user_id BIGINT UNSIGNED NOT NULL, order_id BIGINT UNSIGNED NOT NULL, used_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE KEY uq_coupon_order (coupon_id,order_id), INDEX idx_coupon_user (coupon_id,user_id), CONSTRAINT fk_coupon_usage_coupon FOREIGN KEY (coupon_id) REFERENCES coupons(id), CONSTRAINT fk_coupon_usage_user FOREIGN KEY (user_id) REFERENCES app_users(id), CONSTRAINT fk_coupon_usage_order FOREIGN KEY (order_id) REFERENCES orders(id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
   "CREATE TABLE IF NOT EXISTS customer_addresses (id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, user_id BIGINT UNSIGNED NOT NULL, label VARCHAR(60) NOT NULL DEFAULT 'Home', full_name VARCHAR(160) NOT NULL, phone VARCHAR(40) NOT NULL, address VARCHAR(500) NOT NULL, city VARCHAR(120) NOT NULL, region VARCHAR(120) NOT NULL DEFAULT '', postal_code VARCHAR(24) NOT NULL, country VARCHAR(80) NOT NULL DEFAULT 'India', is_default TINYINT(1) NOT NULL DEFAULT 0, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, INDEX idx_address_user (user_id), CONSTRAINT fk_address_user FOREIGN KEY (user_id) REFERENCES app_users(id) ON DELETE CASCADE) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
@@ -61,6 +62,9 @@ async function initializeDatabase() {
       ["products","featured","TINYINT(1) NOT NULL DEFAULT 0"],
       ["products","is_virtual","TINYINT(1) NOT NULL DEFAULT 0"],
       ["products","weight_grams","INT UNSIGNED NULL"],
+      ["products","product_type","ENUM('simple','variable','digital') NOT NULL DEFAULT 'simple'"],
+      ["products","short_description","VARCHAR(500) NOT NULL DEFAULT ''"],
+      ["products","download_media_id","BIGINT UNSIGNED NULL"],
       ["orders","subtotal","DECIMAL(10,2) NOT NULL DEFAULT 0"],
       ["orders","discount_total","DECIMAL(10,2) NOT NULL DEFAULT 0"],
       ["orders","shipping_total","DECIMAL(10,2) NOT NULL DEFAULT 0"],
@@ -151,6 +155,16 @@ async function readJson(req) {
   if (!raw) return {};
   try { return JSON.parse(raw); } catch (_) { throw Object.assign(new Error("Please submit valid form data."), { status: 400 }); }
 }
+async function readRaw(req, limit) {
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of req) {
+    size += chunk.length;
+    if (size > limit) throw Object.assign(new Error("That file is too large."), { status: 413 });
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks);
+}
 function cleanText(value, max) { return String(value || "").trim().slice(0, max); }
 function validEmail(value) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) && value.length <= 254; }
 function mailTransport() {
@@ -227,6 +241,25 @@ async function api(req, res, url) {
   if (route.startsWith("/api/") && !originIsSame(req)) return sendError(res, 403, "Request origin could not be verified.");
 
   if (req.method === "GET" && route === "/api/auth/session") return publicSession(req, res);
+
+  const publicMediaMatch = route.match(/^\/api\/media\/(\d+)$/);
+  if (req.method === "GET" && publicMediaMatch) {
+    if (!dbReady) return sendError(res,503,"Media is being prepared.");
+    const [[media]] = await dbPool.execute("SELECT file_name,mime_type,file_size,data FROM media_assets WHERE id=? AND is_private=0 LIMIT 1",[Number(publicMediaMatch[1])]);
+    if (!media) return sendError(res,404,"Image not found.");
+    res.writeHead(200,{"Content-Type":media.mime_type,"Content-Length":media.file_size,"Cache-Control":"public, max-age=31536000, immutable","X-Content-Type-Options":"nosniff"});
+    return res.end(media.data);
+  }
+  const downloadMatch = route.match(/^\/api\/orders\/(\d+)\/downloads\/(\d+)$/);
+  if (req.method === "GET" && downloadMatch) {
+    const session = await getSession(req);
+    if (!session) return sendError(res,401,"Please sign in to download your purchase.");
+    const [[asset]] = await dbPool.execute("SELECT m.file_name,m.file_size,m.data FROM orders o JOIN order_items oi ON oi.order_id=o.id JOIN products p ON p.id=oi.product_id JOIN media_assets m ON m.id=p.download_media_id WHERE o.id=? AND o.user_id=? AND p.id=? AND p.product_type='digital' AND (o.status='completed' OR o.payment_status='paid') LIMIT 1",[Number(downloadMatch[1]),session.user.id,Number(downloadMatch[2])]);
+    if (!asset) return sendError(res,404,"This download is not available for that order.");
+    const fileName = cleanText(asset.file_name,180).replace(/[\\"\r\n]/g,"_") || "download";
+    res.writeHead(200,{"Content-Type":"application/octet-stream","Content-Length":asset.file_size,"Content-Disposition":"attachment; filename*=UTF-8''"+encodeURIComponent(fileName),"Cache-Control":"private, no-store","X-Content-Type-Options":"nosniff"});
+    return res.end(asset.data);
+  }
 
   if (req.method === "POST" && route === "/api/auth/register") {
     if (!dbReady) return sendError(res, 503, "Account setup is still being prepared. Please try again shortly.");
@@ -539,20 +572,93 @@ async function api(req, res, url) {
       const [rows] = await dbPool.execute("SELECT id,name,email,created_at,email_verified FROM app_users WHERE role='customer' AND (name LIKE ? OR email LIKE ?) ORDER BY created_at DESC LIMIT 200", [q, q]);
       return sendJson(res, 200, { customers: rows });
     }
-    if (req.method === "GET" && route === "/api/admin/products") {
-      const [rows] = await dbPool.query("SELECT id,name,description,price,stock,image_url,active,created_at FROM products ORDER BY created_at DESC LIMIT 200");
-      return sendJson(res, 200, { products: rows });
+    const uploadMatch = route.match(/^\/api\/admin\/media$/);
+    if (req.method === "POST" && uploadMatch) {
+      const kind = url.searchParams.get("kind") === "download" ? "download" : "image";
+      const limit = kind === "image" ? 8_000_000 : 15_000_000;
+      const data = await readRaw(req,limit);
+      if (!data.length) return sendError(res,400,"Choose a file to upload.");
+      let fileName = "upload";
+      try { fileName = decodeURIComponent(String(req.headers["x-file-name"] || "upload")); } catch (_) {}
+      fileName = path.basename(fileName).replace(/[\\"\r\n]/g,"_").slice(0,255) || "upload";
+      let mimeType = "application/octet-stream";
+      if (kind === "image") {
+        const header = data.subarray(0,12);
+        if (header[0]===0xff&&header[1]===0xd8&&header[2]===0xff) mimeType="image/jpeg";
+        else if (header.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10]))) mimeType="image/png";
+        else if (header.toString("ascii",0,4)==="RIFF"&&header.toString("ascii",8,12)==="WEBP") mimeType="image/webp";
+        else if (header.toString("ascii",0,3)==="GIF") mimeType="image/gif";
+        else return sendError(res,415,"Use a JPG, PNG, WebP, or GIF image.");
+      }
+      const [saved] = await dbPool.execute("INSERT INTO media_assets (file_name,mime_type,file_size,is_private,data) VALUES (?,?,?,?,?)",[fileName,mimeType,data.length,kind==="download"?1:0,data]);
+      return sendJson(res,201,{media:{id:saved.insertId,fileName,url:kind==="image"?"/api/media/"+saved.insertId:null,private:kind==="download"}});
     }
-    if (req.method === "POST" && route === "/api/admin/products") {
-      const body = await readJson(req);
-      const name = cleanText(body.name, 160);
-      const description = cleanText(body.description, 3000);
-      const price = Number(body.price);
-      const stock = body.stock === "" || body.stock === null || body.stock === undefined ? null : Number(body.stock);
-      const imageUrl = cleanText(body.imageUrl, 1000);
-      if (name.length < 2 || !Number.isFinite(price) || price < 0 || (stock !== null && (!Number.isInteger(stock) || stock < 0))) return sendError(res, 400, "Enter a product name, valid price, and whole-number stock amount.");
-      await dbPool.execute("INSERT INTO products (name,description,price,stock,image_url) VALUES (?,?,?,?,?)", [name, description, price, stock, imageUrl || null]);
-      return sendJson(res, 201, { message: "Product added." });
+    if (req.method === "GET" && route === "/api/admin/categories") {
+      const [categories] = await dbPool.query("SELECT c.id,c.name,c.slug,c.description,c.active,COUNT(p.id) AS product_count FROM product_categories c LEFT JOIN products p ON p.category_id=c.id GROUP BY c.id ORDER BY c.sort_order,c.name");
+      return sendJson(res,200,{categories});
+    }
+    if (req.method === "POST" && route === "/api/admin/categories") {
+      const body=await readJson(req), name=cleanText(body.name,120), description=cleanText(body.description,1000);
+      if(name.length<2)return sendError(res,400,"Enter a category name.");
+      const slug=name.toLowerCase().normalize("NFKD").replace(/[\\u0300-\\u036f]/g,"").replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,140)||"category";
+      const [result]=await dbPool.execute("INSERT INTO product_categories (name,slug,description) VALUES (?,?,?)",[name,slug+"-"+randomBytes(3).toString("hex"),description]);
+      return sendJson(res,201,{id:result.insertId,message:"Category added."});
+    }
+    if (req.method === "GET" && route === "/api/admin/products") {
+      const [rows] = await dbPool.query("SELECT p.id,p.name,p.short_description,p.description,p.price,p.sale_price,p.stock,p.image_url,p.sku,p.active,p.featured,p.product_type,p.category_id,p.download_media_id,p.created_at,c.name AS category_name,(SELECT COUNT(*) FROM product_variants v WHERE v.product_id=p.id AND v.active=1) AS variant_count,(SELECT COUNT(*) FROM product_images i WHERE i.product_id=p.id) AS image_count FROM products p LEFT JOIN product_categories c ON c.id=p.category_id ORDER BY p.created_at DESC LIMIT 300");
+      return sendJson(res,200,{products:rows});
+    }
+    const productRoute = route.match(/^\/api\/admin\/products(?:\/(\d+))?$/);
+    if ((req.method==="POST"&&route==="/api/admin/products") || (req.method==="PATCH"&&productRoute&&productRoute[1])) {
+      const body=await readJson(req);
+      const id=productRoute&&productRoute[1]?Number(productRoute[1]):0;
+      const name=cleanText(body.name,160), shortDescription=cleanText(body.shortDescription,500), description=cleanText(body.description,10000);
+      const price=Number(body.price), salePrice=body.salePrice===""||body.salePrice===null||body.salePrice===undefined?null:Number(body.salePrice);
+      const stock=body.stock===""||body.stock===null||body.stock===undefined?null:Number(body.stock);
+      const sku=cleanText(body.sku,64)||null, productType=["simple","variable","digital"].includes(body.productType)?body.productType:"simple";
+      const categoryId=Number(body.categoryId)||null, featured=body.featured?1:0;
+      const weight=body.weightGrams===""||body.weightGrams===null||body.weightGrams===undefined?null:Number(body.weightGrams);
+      const downloadId=productType==="digital"?Number(body.downloadMediaId)||null:null;
+      if(name.length<2||!Number.isFinite(price)||price<0||(salePrice!==null&&(!Number.isFinite(salePrice)||salePrice<0||salePrice>price))||(stock!==null&&(!Number.isInteger(stock)||stock<0))||(weight!==null&&(!Number.isInteger(weight)||weight<0)))return sendError(res,400,"Check the name, prices, stock, and weight.");
+      if(productType==="variable"&&(!Array.isArray(body.variants)||!body.variants.length))return sendError(res,400,"Add at least one variation to a variable product.");
+      if(productType==="digital"&&!downloadId)return sendError(res,400,"Upload a digital product file.");
+      if(downloadId){const [[file]]=await dbPool.execute("SELECT id FROM media_assets WHERE id=? AND is_private=1 LIMIT 1",[downloadId]);if(!file)return sendError(res,400,"Upload the download file again.");}
+      const images=Array.isArray(body.images)?body.images.slice(0,12):[];
+      const variants=Array.isArray(body.variants)?body.variants.slice(0,100):[];
+      const imageUrl=images.length?cleanText(typeof images[0]==="string"?images[0]:images[0].url,1000):cleanText(body.imageUrl,1000);
+      const conn=await dbPool.getConnection();
+      try{
+        await conn.beginTransaction();
+        let productId=id;
+        if(id){
+          const [found]=await conn.execute("SELECT id FROM products WHERE id=? LIMIT 1",[id]);
+          if(!found.length){await conn.rollback();return sendError(res,404,"Product not found.");}
+          await conn.execute("UPDATE products SET name=?,short_description=?,description=?,price=?,sale_price=?,stock=?,image_url=?,sku=?,product_type=?,category_id=?,featured=?,is_virtual=?,weight_grams=?,download_media_id=? WHERE id=?",[name,shortDescription,description,price,salePrice,stock,imageUrl||null,sku,productType,categoryId,featured,productType==="digital"?1:0,weight,downloadId,id]);
+        }else{
+          const [result]=await conn.execute("INSERT INTO products (name,short_description,description,price,sale_price,stock,image_url,sku,product_type,category_id,featured,is_virtual,weight_grams,download_media_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",[name,shortDescription,description,price,salePrice,stock,imageUrl||null,sku,productType,categoryId,featured,productType==="digital"?1:0,weight,downloadId]);
+          productId=result.insertId;
+        }
+        await conn.execute("DELETE FROM product_images WHERE product_id=?",[productId]);
+        for(const [index,image] of images.entries()){
+          const url=cleanText(typeof image==="string"?image:image.url,1000), alt=cleanText(typeof image==="string"?"":image.alt,180);
+          if(url)await conn.execute("INSERT INTO product_images (product_id,image_url,alt_text,sort_order) VALUES (?,?,?,?)",[productId,url,alt,index]);
+        }
+        await conn.execute("DELETE FROM product_variants WHERE product_id=?",[productId]);
+        if(productType==="variable")for(const v of variants){
+          const variantName=cleanText(v.name,160), variantSku=cleanText(v.sku,64)||null, attrs=typeof v.attributes==="object"&&v.attributes?v.attributes:{Options:cleanText(v.attributes,300)};
+          const variantPrice=v.price===""||v.price===null||v.price===undefined?null:Number(v.price), variantStock=v.stock===""||v.stock===null||v.stock===undefined?null:Number(v.stock);
+          if(!variantName||((variantPrice!==null)&&(!Number.isFinite(variantPrice)||variantPrice<0))||((variantStock!==null)&&(!Number.isInteger(variantStock)||variantStock<0)))throw Object.assign(new Error("Check each variation name, price, and stock."),{status:400});
+          await conn.execute("INSERT INTO product_variants (product_id,sku,name,attributes_json,price,stock) VALUES (?,?,?,?,?,?)",[productId,variantSku,variantName,JSON.stringify(attrs),variantPrice,variantStock]);
+        }
+        await conn.commit();
+        return sendJson(res,id?200:201,{id:productId,message:id?"Product updated.":"Product added."});
+      }catch(error){await conn.rollback();throw error;}finally{conn.release();}
+    }
+    if (req.method==="PATCH"&&/^\/api\/admin\/products\/\d+\/visibility$/.test(route)) {
+      const id=Number(route.split("/")[4]),body=await readJson(req);
+      if(typeof body.active!=="boolean")return sendError(res,400,"Choose whether this product should be visible.");
+      await dbPool.execute("UPDATE products SET active=? WHERE id=?",[body.active?1:0,id]);
+      return sendJson(res,200,{message:body.active?"Product published.":"Product hidden."});
     }
     if (req.method === "GET" && route === "/api/admin/services") {
       const [rows] = await dbPool.query("SELECT id,name,description,duration_minutes,price,active,created_at FROM services ORDER BY created_at DESC LIMIT 200");
