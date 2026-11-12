@@ -526,3 +526,29 @@ html{scroll-behavior:smooth}
 .booking-request-panel{scroll-margin-top:24px}
 @media(max-width:1080px){.services-page .layout.booking-layout{grid-template-columns:minmax(0,1fr) minmax(320px,.78fr)}.service-list-grid{grid-template-columns:1fr}}
 @media(max-width:760px){.services-page .pagehead{padding-top:34px}.services-page .layout.booking-layout{grid-template-columns:1fr}.services-filterbar{grid-template-columns:1fr}.service-list-grid{grid-template-columns:1fr}.service-card-bottom{align-items:flex-start;flex-direction:column}.service-book-button{width:100%}}
+
+/* LuMekH floating customer header */
+body:has(.topbar nav.site-menu){position:relative}
+body:has(.topbar nav.site-menu)::before{content:"";position:absolute;z-index:0;top:0;left:0;right:0;height:110px;background:#111214;pointer-events:none}
+body:has(.topbar nav.site-menu) .shell{position:relative;z-index:1}
+body:has(.topbar nav.site-menu) .topbar{position:relative;left:50%;transform:translateX(-50%);z-index:2;width:min(1300px,calc(100vw - 48px));min-height:66px;margin:9px auto 0;padding:7px 20px;background:#fff;border:1px solid #e7e7eb;border-radius:999px;box-shadow:0 2px 12px rgba(0,0,0,.06)}
+.topbar .site-brand{display:flex;align-items:center;gap:10px;color:#131317;text-decoration:none}
+.topbar .brand-logo,.footer .brand-logo{display:block;width:42px;height:42px;object-fit:contain;flex:0 0 auto}
+.topbar .brand-copy,.footer .brand-copy{display:grid;gap:2px}
+.topbar .brand-copy strong,.footer .brand-copy strong{font:800 16px/1.05 Manrope,sans-serif;letter-spacing:-.035em}
+.topbar .brand-copy small,.footer .brand-copy small{font:700 8px/1.2 Manrope,sans-serif;letter-spacing:.16em;color:#64646c}
+body:has(.topbar nav.site-menu) .site-menu{gap:4px}
+body:has(.topbar nav.site-menu) .site-menu .navlink{padding:11px 15px;border-radius:999px;color:#1a1a1e;font-size:13px}
+body:has(.topbar nav.site-menu) .site-menu .header-cart{width:42px;height:42px;margin-left:7px}
+.footer .site-brand{gap:9px}
+@media(max-width:640px){
+ body:has(.topbar nav.site-menu)::before{height:91px}
+ body:has(.topbar nav.site-menu) .topbar{width:calc(100vw - 20px);min-height:58px;margin-top:7px;padding:6px 11px;gap:8px}
+ .topbar .brand-logo{width:34px;height:34px}
+ .topbar .brand-copy strong{font-size:14px}
+ .topbar .brand-copy small{font-size:7px}
+ body:has(.topbar nav.site-menu) .site-menu{gap:1px}
+ body:has(.topbar nav.site-menu) .site-menu .navlink{padding:9px 8px;font-size:11px}
+ body:has(.topbar nav.site-menu) .site-menu .header-cart{width:36px;height:36px;margin-left:3px}
+ body:has(.topbar nav.site-menu) .site-menu .header-cart svg{width:17px;height:17px}
+}
