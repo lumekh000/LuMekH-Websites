@@ -84,10 +84,13 @@ async function initializeDatabase() {
       if (Number(columns[0].found) === 0) await dbPool.query("ALTER TABLE `" + table + "` ADD COLUMN `" + column + "` " + definition);
     }
     await dbPool.query("INSERT IGNORE INTO store_settings (setting_key,setting_value) VALUES ('currency','INR'),('currency_symbol','₹'),('tax_enabled','0'),('tax_rate','0'),('tax_label','GST'),('shipping_flat_rate','0'),('shipping_free_threshold','0'),('shipping_pickup_enabled','1'),('shipping_local_delivery_enabled','0'),('shipping_local_delivery_rate','0'),('coupon_enabled','1'),('store_name','LuMekH™'),('low_stock_threshold','5')");
-    const [ownerRows] = await dbPool.execute("SELECT id FROM app_users WHERE LOWER(email)=? AND email_verified=1 LIMIT 1",[adminEmail]);
+    const [ownerRows] = await dbPool.execute("SELECT id FROM app_users WHERE LOWER(email)=? LIMIT 1",[adminEmail]);
     if (ownerRows.length) {
-      await dbPool.execute("UPDATE app_users SET role='customer' WHERE role='admin' AND id<>?",[ownerRows[0].id]);
-      await dbPool.execute("UPDATE app_users SET role='admin' WHERE id=?",[ownerRows[0].id]);
+      await dbPool.execute("UPDATE app_users SET role='admin',email_verified=1 WHERE id=?",[ownerRows[0].id]);
+    } else {
+      const bootstrapPassword = randomBytes(48).toString("base64url");
+      const bootstrapHash = await hashPassword(bootstrapPassword);
+      await dbPool.execute("INSERT INTO app_users (name,email,password_hash,role,email_verified) VALUES (?,?,?,'admin',1)",["LuMekH Admin",adminEmail,bootstrapHash]);
     }
     dbReady = true;
     console.log("LuMekH database is ready.");
