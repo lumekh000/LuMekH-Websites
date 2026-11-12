@@ -202,6 +202,17 @@ function allowLogin(req, email) {
 }
 function clearAttempts(req, email) { loginAttempts.delete(attemptKey(req, email)); }
 
+async function readStoreSettings() {
+  if (!dbReady) return {};
+  const [rows] = await dbPool.query("SELECT setting_key,setting_value FROM store_settings");
+  return Object.fromEntries(rows.map(row => [row.setting_key, row.setting_value]));
+}
+function couponDiscount(coupon, subtotal) {
+  if (!coupon || subtotal < Number(coupon.minimum_amount || 0)) return 0;
+  const raw = coupon.discount_type === "percent" ? subtotal * Number(coupon.amount) / 100 : Number(coupon.amount);
+  return Math.max(0, Math.min(subtotal, Math.round(raw * 100) / 100));
+}
+
 async function api(req, res, url) {
   const route = url.pathname;
   if (req.method === "GET" && route === "/api/health") return sendJson(res, 200, { status: "ok", databaseReady: dbReady, emailReady: Boolean(process.env.SMTP_PASS) });
@@ -321,10 +332,96 @@ async function api(req, res, url) {
     } finally { conn.release(); }
   }
 
+  if (req.method === "GET" && route === "/api/store/config") {
+    if (!dbReady) return sendError(res, 503, "The store is being set up.");
+    const settings = await readStoreSettings();
+    const razorpayAvailable = Boolean(process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET);
+    const shippingMethods = [{ id: "flat_rate", name: "Standard delivery", cost: Number(settings.shipping_flat_rate || 0) }];
+    if (settings.shipping_pickup_enabled === "1") shippingMethods.push({ id: "pickup", name: "Local pickup", cost: 0 });
+    if (settings.shipping_local_delivery_enabled === "1") shippingMethods.push({ id: "local_delivery", name: "Local delivery", cost: Number(settings.shipping_local_delivery_rate || 0) });
+    return sendJson(res, 200, {
+      currency: settings.currency || "INR", currencySymbol: settings.currency_symbol || "₹",
+      taxEnabled: settings.tax_enabled === "1", taxRate: Number(settings.tax_rate || 0), taxLabel: settings.tax_label || "Tax",
+      couponEnabled: settings.coupon_enabled !== "0", freeShippingThreshold: Number(settings.shipping_free_threshold || 0),
+      shippingMethods, paymentMethods: [{ id: "manual", name: "Manual payment" }, { id: "cod", name: "Cash on delivery" }, ...(razorpayAvailable ? [{ id: "razorpay", name: "Pay online", keyId: process.env.RAZORPAY_KEY_ID }] : [])]
+    });
+  }
+  if (req.method === "GET" && route === "/api/categories") {
+    if (!dbReady) return sendError(res, 503, "The store is being set up.");
+    const [categories] = await dbPool.query("SELECT id,name,slug,description FROM product_categories WHERE active=1 ORDER BY sort_order,name");
+    return sendJson(res, 200, { categories });
+  }
   if (req.method === "GET" && route === "/api/products") {
     if (!dbReady) return sendError(res, 503, "The store is being set up.");
-    const [rows] = await dbPool.execute("SELECT id,name,description,price,stock,image_url FROM products WHERE active=1 ORDER BY created_at DESC LIMIT 100");
-    return sendJson(res, 200, { products: rows });
+    const query = cleanText(url.searchParams.get("q"), 100);
+    const category = Number(url.searchParams.get("category") || 0);
+    const min = Number(url.searchParams.get("min") || 0);
+    const max = Number(url.searchParams.get("max") || 0);
+    const sort = url.searchParams.get("sort") || "newest";
+    const page = Math.max(1, Math.min(1000, Number(url.searchParams.get("page") || 1)));
+    const perPage = Math.max(1, Math.min(48, Number(url.searchParams.get("limit") || 24)));
+    const where = ["p.active=1"];
+    const params = [];
+    if (query) { where.push("(p.name LIKE ? OR p.description LIKE ? OR p.sku LIKE ?)"); const needle = "%" + query + "%"; params.push(needle,needle,needle); }
+    if (Number.isInteger(category) && category > 0) { where.push("p.category_id=?"); params.push(category); }
+    if (Number.isFinite(min) && min > 0) { where.push("COALESCE(p.sale_price,p.price)>=?"); params.push(min); }
+    if (Number.isFinite(max) && max > 0) { where.push("COALESCE(p.sale_price,p.price)<=?"); params.push(max); }
+    const sortMap = { newest:"p.created_at DESC", price_asc:"COALESCE(p.sale_price,p.price) ASC", price_desc:"COALESCE(p.sale_price,p.price) DESC", name:"p.name ASC", featured:"p.featured DESC,p.created_at DESC" };
+    const orderBy = sortMap[sort] || sortMap.newest;
+    const [rows] = await dbPool.execute("SELECT p.id,p.name,p.description,p.price,p.sale_price,COALESCE(p.sale_price,p.price) AS current_price,p.stock,p.image_url,p.sku,p.featured,p.is_virtual,p.weight_grams,c.name AS category_name,(SELECT COUNT(*) FROM product_reviews r WHERE r.product_id=p.id AND r.status='approved') AS review_count,(SELECT ROUND(AVG(r.rating),1) FROM product_reviews r WHERE r.product_id=p.id AND r.status='approved') AS average_rating FROM products p LEFT JOIN product_categories c ON c.id=p.category_id WHERE " + where.join(" AND ") + " ORDER BY " + orderBy + " LIMIT ? OFFSET ?", [...params,perPage,(page-1)*perPage]);
+    const [[count]] = await dbPool.execute("SELECT COUNT(*) AS total FROM products p WHERE " + where.map(x=>x.replaceAll("p.","p.")).join(" AND "), params);
+    return sendJson(res, 200, { products: rows, total: Number(count.total), page, pages: Math.ceil(Number(count.total)/perPage) });
+  }
+  const productMatch = route.match(/^\/api\/products\/(\d+)$/);
+  if (req.method === "GET" && productMatch) {
+    if (!dbReady) return sendError(res, 503, "The store is being set up.");
+    const id = Number(productMatch[1]);
+    const [[product]] = await dbPool.execute("SELECT p.id,p.name,p.description,p.price,p.sale_price,COALESCE(p.sale_price,p.price) AS current_price,p.stock,p.image_url,p.sku,p.featured,p.is_virtual,p.weight_grams,c.name AS category_name,(SELECT COUNT(*) FROM product_reviews r WHERE r.product_id=p.id AND r.status='approved') AS review_count,(SELECT ROUND(AVG(r.rating),1) FROM product_reviews r WHERE r.product_id=p.id AND r.status='approved') AS average_rating FROM products p LEFT JOIN product_categories c ON c.id=p.category_id WHERE p.id=? AND p.active=1 LIMIT 1",[id]);
+    if (!product) return sendError(res,404,"Product not found.");
+    const [images] = await dbPool.execute("SELECT id,image_url,alt_text FROM product_images WHERE product_id=? ORDER BY sort_order,id",[id]);
+    const [variants] = await dbPool.execute("SELECT id,sku,name,attributes_json,price,stock FROM product_variants WHERE product_id=? AND active=1 ORDER BY id",[id]);
+    const [reviews] = await dbPool.execute("SELECT r.rating,r.title,r.body,r.created_at,u.name AS customer_name FROM product_reviews r JOIN app_users u ON u.id=r.user_id WHERE r.product_id=? AND r.status='approved' ORDER BY r.created_at DESC LIMIT 50",[id]);
+    return sendJson(res,200,{product,images,variants,reviews});
+  }
+  if (req.method === "POST" && route === "/api/coupons/validate") {
+    if (!dbReady) return sendError(res,503,"Store is being set up.");
+    const body=await readJson(req), code=cleanText(body.code,80).toUpperCase(), subtotal=Number(body.subtotal);
+    const settings=await readStoreSettings();
+    if(settings.coupon_enabled==="0")return sendError(res,400,"Coupons are not available at checkout.");
+    if(!code||!Number.isFinite(subtotal)||subtotal<0)return sendError(res,400,"Enter a valid coupon code and basket.");
+    const [[coupon]]=await dbPool.execute("SELECT * FROM coupons WHERE code=? AND active=1 LIMIT 1",[code]);
+    if(!coupon)return sendError(res,404,"That coupon code is not valid.");
+    if(coupon.expires_at && new Date(coupon.expires_at).getTime()<Date.now())return sendError(res,400,"That coupon has expired.");
+    if(coupon.usage_limit!==null && Number(coupon.used_count)>=Number(coupon.usage_limit))return sendError(res,400,"That coupon has reached its usage limit.");
+    const discount=couponDiscount(coupon,subtotal);
+    if(discount<=0)return sendError(res,400,"Your basket does not meet this coupon’s minimum spend.");
+    return sendJson(res,200,{code:coupon.code,discount,discountType:coupon.discount_type,message:"Coupon applied."});
+  }
+  if (req.method === "GET" && route === "/api/wishlist") {
+    const session=await getSession(req);if(!session)return sendError(res,401,"Sign in to view your wishlist.");
+    const [products]=await dbPool.execute("SELECT p.id,p.name,p.description,p.price,p.sale_price,COALESCE(p.sale_price,p.price) AS current_price,p.stock,p.image_url FROM wishlists w JOIN products p ON p.id=w.product_id WHERE w.user_id=? AND p.active=1 ORDER BY w.created_at DESC",[session.user.id]);
+    return sendJson(res,200,{products});
+  }
+  if (req.method === "POST" && route === "/api/wishlist") {
+    const session=await requireSession(req,res);if(!session)return;
+    const body=await readJson(req),id=Number(body.productId);
+    if(!Number.isInteger(id)||id<1)return sendError(res,400,"Choose a valid product.");
+    await dbPool.execute("INSERT IGNORE INTO wishlists (user_id,product_id) SELECT ?,id FROM products WHERE id=? AND active=1",[session.user.id,id]);
+    return sendJson(res,200,{message:"Saved to your wishlist."});
+  }
+  const wishlistMatch=route.match(/^\/api\/wishlist\/(\d+)$/);
+  if(req.method==="DELETE"&&wishlistMatch){
+    const session=await requireSession(req,res);if(!session)return;
+    await dbPool.execute("DELETE FROM wishlists WHERE user_id=? AND product_id=?",[session.user.id,Number(wishlistMatch[1])]);
+    return sendJson(res,200,{message:"Removed from wishlist."});
+  }
+  const reviewMatch=route.match(/^\/api\/products\/(\d+)\/reviews$/);
+  if(req.method==="POST"&&reviewMatch){
+    const session=await requireSession(req,res);if(!session)return;
+    const body=await readJson(req),rating=Number(body.rating),title=cleanText(body.title,160),text=cleanText(body.body,2000);
+    if(!Number.isInteger(rating)||rating<1||rating>5||text.length<5)return sendError(res,400,"Choose a 1–5 star rating and write a short review.");
+    try{await dbPool.execute("INSERT INTO product_reviews (product_id,user_id,rating,title,body) VALUES (?,?,?,?,?)",[Number(reviewMatch[1]),session.user.id,rating,title,text]);return sendJson(res,201,{message:"Review submitted for approval."});}
+    catch(error){if(error.code==="ER_DUP_ENTRY")return sendError(res,409,"You already reviewed this product.");throw error;}
   }
 
   if (req.method === "GET" && route === "/api/services") {
