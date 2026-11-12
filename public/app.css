@@ -747,7 +747,7 @@ input[type=search]::placeholder{color:#92887e}
 @media(max-width:420px){.footer-actions{flex-direction:column;gap:12px}.footer-copy{font-size:11px}}
 
 /* Black brand bars; compact, tap-to-expand catalog search */
-body:has(.topbar nav.site-menu)::before{display:block!important;content:"";height:92px!important;background:#111!important}
+body:has(.topbar nav.site-menu)::before{display:none!important;content:"";height:0!important;background:transparent!important}
 .topbar{background:#111!important;color:#fff!important;border-color:#242424!important;box-shadow:0 8px 22px rgba(0,0,0,.16)!important}
 .topbar .brand,.topbar .brand-copy strong,.topbar .home-brand-type strong{color:#fff!important}
 .topbar .brand-copy small,.topbar .home-brand-type small{color:#d7d1cc!important}
@@ -792,3 +792,6 @@ body:has(.topbar nav.site-menu) .topbar .brand-copy small{color:#d7d1cc!importan
 body:has(.topbar nav.site-menu) .topbar nav.site-menu>.navlink:not(.active):not([aria-current="page"]){color:#fff!important}
 body:has(.topbar nav.site-menu) .topbar nav.site-menu>.navlink:not(.active):not([aria-current="page"]):hover,
 body:has(.topbar nav.site-menu) .topbar nav.site-menu>.navlink:not(.active):not([aria-current="page"]):focus-visible{background:#292725!important;color:#fff!important;border-color:#41403e!important}
+
+/* Header panel matches the black footer while page content stays light */
+body:has(.topbar nav.site-menu) .topbar{position:relative!important;left:auto!important;transform:none!important;z-index:2!important;width:100%!important;min-height:72px!important;margin:16px auto 0!important;padding:12px 28px!important;background:#111!important;color:#fff!important;border:1px solid #252321!important;border-radius:24px!important;box-shadow:0 8px 25px rgba(0,0,0,.12)!important}
