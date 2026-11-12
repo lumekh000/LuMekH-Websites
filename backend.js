@@ -615,9 +615,11 @@ async function api(req, res, url) {
     const items = Array.isArray(body.items) ? body.items.slice(0, 30) : [];
     const fullName = cleanText(body.fullName, 160) || session.user.name;
     const phone = cleanText(body.phone, 40);
+    const email = cleanText(body.email, 254).toLowerCase();
     const address = cleanText(body.address, 500);
-    const city = cleanText(body.city, 120);
+    const city = cleanText(body.city, 120) || "";
     const postalCode = cleanText(body.postalCode, 24);
+    if (!validEmail(email) || email !== String(session.user.email || "").toLowerCase()) return sendError(res, 400, "Enter the email address linked to your customer account.");
     if (!items.length) return sendError(res, 400, "Add at least one item to your basket.");
     const conn = await dbPool.getConnection();
     try {
@@ -647,7 +649,7 @@ async function api(req, res, url) {
         total += unitPrice * quantity;
         lines.push({id:product.id,name:product.name,displayName:product.name+(variant?" · "+variant.name:""),price:unitPrice,quantity,stock,type,variantId:variant?variant.id:null,sku:variant?variant.sku:product.sku,imageUrl:product.image_url});
       }
-      if (requiresShipping && (!fullName || !phone || !address || !city || !postalCode)) { await conn.rollback(); return sendError(res, 400, "Complete the delivery details for physical products."); }
+      if (requiresShipping && (!fullName || !phone || !address || !postalCode)) { await conn.rollback(); return sendError(res, 400, "Complete the delivery details for physical products."); }
       const [order] = await conn.execute("INSERT INTO orders (user_id,total,full_name,phone,address,city,postal_code,subtotal) VALUES (?,?,?,?,?,?,?,?)", [session.user.id,total,fullName,phone,address,city,postalCode,total]);
       for (const line of lines) {
         const lineTotal = line.price * line.quantity;
@@ -659,7 +661,7 @@ async function api(req, res, url) {
       }
       await conn.commit();
       let emailSent = false;
-      if (process.env.SMTP_PASS) emailSent = await sendMail(session.user.email,"LuMekH order received","<p>Your order #"+order.insertId+" has been received. Total: ₹"+total.toFixed(2)+".</p><p>Payment will be confirmed separately.</p>");
+      if (process.env.SMTP_PASS) emailSent = await sendMail(email,"LuMekH order received","<p>Your order #"+order.insertId+" has been received. Total: ₹"+total.toFixed(2)+".</p><p>Payment will be confirmed separately.</p>");
       return sendJson(res,201,{message:"Order request saved. Payment will be confirmed separately.",orderId:order.insertId,total,emailSent});
     } catch (error) {
       await conn.rollback();
