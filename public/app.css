@@ -795,3 +795,19 @@ body:has(.topbar nav.site-menu) .topbar nav.site-menu>.navlink:not(.active):not(
 
 /* Header panel matches the black footer while page content stays light */
 body:has(.topbar nav.site-menu) .topbar{position:relative!important;left:auto!important;transform:none!important;z-index:2!important;width:100%!important;min-height:72px!important;margin:16px auto 0!important;padding:12px 28px!important;background:#111!important;color:#fff!important;border:1px solid #252321!important;border-radius:24px!important;box-shadow:0 8px 25px rgba(0,0,0,.12)!important}
+
+/* Dynamic CRM-managed home catalog cards, matching the colorful memory-card reference. */
+.home-live-card-grid .home-catalog-card{min-height:245px}
+.home-live-card-grid .home-catalog-card:nth-child(5n+1){background:#ffd3bd!important}
+.home-live-card-grid .home-catalog-card:nth-child(5n+2){background:#dceaff!important}
+.home-live-card-grid .home-catalog-card:nth-child(5n+3){background:#ffdf68!important}
+.home-live-card-grid .home-catalog-card:nth-child(5n+4){background:#d8ebc9!important}
+.home-live-card-grid .home-catalog-card:nth-child(5n){background:#f4d5e8!important}
+.home-catalog-image{position:absolute;right:14px;top:12px;width:58px;height:58px;object-fit:cover;border:2px solid rgba(33,30,28,.8);border-radius:13px;box-shadow:3px 4px 0 #211e1c}
+.home-catalog-card small{max-width:calc(100% - 70px);text-transform:uppercase}
+.home-catalog-description{font-size:12px;line-height:1.4}
+.home-catalog-detail,.home-catalog-action{font-size:12px;font-weight:800}
+.home-catalog-more{margin:20px 0 0}
+.home-catalog-empty{grid-column:1/-1;padding:24px;border:1px dashed #cfc7bb;border-radius:16px;background:rgba(255,255,255,.55)}
+.home-catalog-empty a{font-weight:800;text-decoration:underline}
+@media(max-width:720px){.home-live-card-grid .home-catalog-card{min-height:195px}.home-catalog-image{width:50px;height:50px}}
