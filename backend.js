@@ -1,7 +1,7 @@
 const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
-const { randomBytes, createHash, scrypt, timingSafeEqual } = require("node:crypto");
+const { randomBytes, createHash, createCipheriv, createDecipheriv, scrypt, timingSafeEqual } = require("node:crypto");
 const { promisify } = require("node:util");
 const mysql = require("mysql2/promise");
 const nodemailer = require("nodemailer");
@@ -37,6 +37,8 @@ const schema = [
   "CREATE TABLE IF NOT EXISTS service_categories (id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, name VARCHAR(120) NOT NULL UNIQUE, description VARCHAR(1000) NOT NULL DEFAULT '', active TINYINT(1) NOT NULL DEFAULT 1, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
   "CREATE TABLE IF NOT EXISTS booking_resources (id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, resource_type ENUM('agent','studio') NOT NULL, name VARCHAR(160) NOT NULL, email VARCHAR(254) NOT NULL DEFAULT '', location VARCHAR(500) NOT NULL DEFAULT '', timezone VARCHAR(80) NOT NULL DEFAULT 'Asia/Kolkata', active TINYINT(1) NOT NULL DEFAULT 1, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, INDEX idx_booking_resources (resource_type,active,name)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
   "CREATE TABLE IF NOT EXISTS service_extras (id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, service_id BIGINT UNSIGNED NOT NULL, name VARCHAR(160) NOT NULL, description VARCHAR(1000) NOT NULL DEFAULT '', price DECIMAL(10,2) NOT NULL DEFAULT 0, duration_minutes SMALLINT UNSIGNED NOT NULL DEFAULT 0, price_per_day TINYINT(1) NOT NULL DEFAULT 0, active TINYINT(1) NOT NULL DEFAULT 1, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, INDEX idx_service_extras (service_id,active), CONSTRAINT fk_service_extra_service FOREIGN KEY (service_id) REFERENCES services(id) ON DELETE CASCADE) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+  "CREATE TABLE IF NOT EXISTS google_calendar_oauth_states (state_hash CHAR(64) NOT NULL PRIMARY KEY, resource_id BIGINT UNSIGNED NOT NULL, user_id BIGINT UNSIGNED NOT NULL, expires_at DATETIME NOT NULL, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, INDEX idx_google_oauth_expiry (expires_at), CONSTRAINT fk_google_oauth_resource FOREIGN KEY (resource_id) REFERENCES booking_resources(id) ON DELETE CASCADE) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+  "CREATE TABLE IF NOT EXISTS google_calendar_events (id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, booking_id BIGINT UNSIGNED NOT NULL, resource_id BIGINT UNSIGNED NOT NULL, google_event_id VARCHAR(255) NOT NULL, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, INDEX idx_google_booking_resource (booking_id,resource_id), UNIQUE KEY uq_google_event_id (resource_id,google_event_id), CONSTRAINT fk_google_event_resource FOREIGN KEY (resource_id) REFERENCES booking_resources(id) ON DELETE CASCADE) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
   "CREATE TABLE IF NOT EXISTS booking_settings (setting_key VARCHAR(80) NOT NULL PRIMARY KEY, setting_value TEXT NOT NULL, updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
   "CREATE TABLE IF NOT EXISTS bookings (id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, user_id BIGINT UNSIGNED NOT NULL, service_id BIGINT UNSIGNED NOT NULL, starts_at DATETIME NOT NULL, status ENUM('requested','confirmed','cancelled','completed') NOT NULL DEFAULT 'requested', notes VARCHAR(1000) NOT NULL DEFAULT '', created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, INDEX idx_bookings_start (starts_at, status), INDEX idx_bookings_user (user_id, starts_at), CONSTRAINT fk_bookings_user FOREIGN KEY (user_id) REFERENCES app_users(id), CONSTRAINT fk_bookings_service FOREIGN KEY (service_id) REFERENCES services(id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
   "CREATE TABLE IF NOT EXISTS orders (id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, user_id BIGINT UNSIGNED NOT NULL, total DECIMAL(10,2) NOT NULL, status ENUM('new','processing','completed','cancelled') NOT NULL DEFAULT 'new', full_name VARCHAR(160) NOT NULL, phone VARCHAR(40) NOT NULL, address VARCHAR(500) NOT NULL, city VARCHAR(120) NOT NULL, postal_code VARCHAR(24) NOT NULL, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, INDEX idx_orders_user (user_id, created_at), INDEX idx_orders_created (created_at), CONSTRAINT fk_orders_user FOREIGN KEY (user_id) REFERENCES app_users(id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
@@ -76,6 +78,13 @@ async function initializeDatabase() {
       ["services","max_advance_days","SMALLINT UNSIGNED NOT NULL DEFAULT 365"],
       ["bookings","booking_dates_json","TEXT NULL"],
       ["bookings","booking_extras_json","TEXT NULL"],
+      ["service_extras","sale_price","DECIMAL(10,2) NULL"],
+      ["service_extras","max_quantity","SMALLINT UNSIGNED NOT NULL DEFAULT 1"],
+      ["service_extras","image_url","VARCHAR(1000) NULL"],
+      ["booking_resources","image_url","VARCHAR(1000) NULL"],
+      ["booking_resources","calendar_email","VARCHAR(254) NOT NULL DEFAULT ''"],
+      ["booking_resources","google_refresh_token_enc","TEXT NULL"],
+      ["booking_resources","google_calendar_id","VARCHAR(255) NOT NULL DEFAULT 'primary'"],
       ["bookings","total_price","DECIMAL(10,2) NOT NULL DEFAULT 0"],
       ["products","sku","VARCHAR(64) NULL"],
       ["products","sale_price","DECIMAL(10,2) NULL"],
@@ -256,11 +265,28 @@ function couponDiscount(coupon, subtotal) {
   return Math.max(0, Math.min(subtotal, Math.round(raw * 100) / 100));
 }
 
+function googleTokenKey(){return createHash("sha256").update(String(process.env.GOOGLE_TOKEN_ENCRYPTION_KEY||process.env.DB_PASSWORD||"")).digest()}
+function encryptGoogleToken(value){const iv=randomBytes(12),cipher=createCipheriv("aes-256-gcm",googleTokenKey(),iv),data=Buffer.concat([cipher.update(String(value),"utf8"),cipher.final()]);return Buffer.concat([iv,cipher.getAuthTag(),data]).toString("base64")}
+function decryptGoogleToken(value){const raw=Buffer.from(String(value||""),"base64"),iv=raw.subarray(0,12),tag=raw.subarray(12,28),cipher=createDecipheriv("aes-256-gcm",googleTokenKey(),iv);cipher.setAuthTag(tag);return Buffer.concat([cipher.update(raw.subarray(28)),cipher.final()]).toString("utf8")}
+async function googleAccessToken(resource){if(!resource?.google_refresh_token_enc||!process.env.GOOGLE_CLIENT_ID||!process.env.GOOGLE_CLIENT_SECRET)return null;const refreshToken=decryptGoogleToken(resource.google_refresh_token_enc),body=new URLSearchParams({client_id:process.env.GOOGLE_CLIENT_ID,client_secret:process.env.GOOGLE_CLIENT_SECRET,refresh_token:refreshToken,grant_type:"refresh_token"}),response=await fetch("https://oauth2.googleapis.com/token",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body}),data=await response.json();if(!response.ok||!data.access_token)throw Error(data.error_description||"Google Calendar authorization needs to be reconnected.");return data.access_token}
+async function syncGoogleBooking(resourceId,bookingId,service,bookingDates,extras,customer){if(!resourceId)return false;try{const [[resource]]=await dbPool.execute("SELECT id,name,timezone,google_calendar_id,google_refresh_token_enc FROM booking_resources WHERE id=? AND resource_type='agent' AND active=1 LIMIT 1",[resourceId]);if(!resource?.google_refresh_token_enc)return false;const token=await googleAccessToken(resource);if(!token)return false;const dates=Array.isArray(bookingDates)?bookingDates:[];let synced=false;for(const slot of dates){const date=String(slot.date||""),daily=service.booking_mode==="daily";if(!date)continue;const duration=daily?Math.max(1,Math.ceil(Number(service.duration_minutes||1440)/1440)):0,endDate=daily?new Date(Date.parse(date+"T00:00:00Z")+duration*86400000).toISOString().slice(0,10):date,time=String(slot.time||"09:00"),startDateTime=date+"T"+time+":00",endDateTime=new Date(Date.parse(date+"T"+time+":00Z")+Number(service.duration_minutes||60)*60000).toISOString().replace(".000Z",""),event={summary:service.name+" · "+resource.name,description:"LuMekH booking #"+bookingId+"\nCustomer: "+customer.name+"\nPhone: "+customer.phone+"\nExtras: "+(extras||[]).map(x=>x.name+" × "+x.quantity).join(", "),start:daily?{date,timeZone:resource.timezone||"Asia/Kolkata"}:{dateTime:startDateTime,timeZone:resource.timezone||"Asia/Kolkata"},end:daily?{date:endDate,timeZone:resource.timezone||"Asia/Kolkata"}:{dateTime:endDateTime,timeZone:resource.timezone||"Asia/Kolkata"}};const response=await fetch("https://www.googleapis.com/calendar/v3/calendars/"+encodeURIComponent(resource.google_calendar_id||"primary")+"/events",{method:"POST",headers:{Authorization:"Bearer "+token,"Content-Type":"application/json"},body:JSON.stringify(event)}),data=await response.json();if(!response.ok||!data.id)continue;await dbPool.execute("INSERT IGNORE INTO google_calendar_events (booking_id,resource_id,google_event_id) VALUES (?,?,?)",[bookingId,resourceId,data.id]);synced=true}return synced}catch(error){console.error("Google Calendar booking sync failed:",error.message);return false}}
 async function api(req, res, url) {
   const route = url.pathname;
   if (req.method === "GET" && route === "/api/health") return sendJson(res, 200, { status: "ok", databaseReady: dbReady, emailReady: Boolean(process.env.SMTP_PASS) });
-  if (route.startsWith("/api/") && !originIsSame(req)) return sendError(res, 403, "Request origin could not be verified.");
+  if (route.startsWith("/api/") && route !== "/api/google-calendar/callback" && !originIsSame(req)) return sendError(res, 403, "Request origin could not be verified.");
 
+  if (req.method === "GET" && route === "/api/google-calendar/callback") {
+    const code=String(url.searchParams.get("code")||""),state=String(url.searchParams.get("state")||"");
+    const finish=(ok)=>{const target=originFor(req)+"/admin/services.html?view=resources&calendar="+(ok?"connected":"error");res.writeHead(302,{Location:target,"Cache-Control":"no-store"});return res.end()};
+    if(!code||!state||!process.env.GOOGLE_CLIENT_ID||!process.env.GOOGLE_CLIENT_SECRET)return finish(false);
+    const [[entry]]=await dbPool.execute("SELECT resource_id,user_id FROM google_calendar_oauth_states WHERE state_hash=? AND expires_at>UTC_TIMESTAMP() LIMIT 1",[hashToken(state)]);
+    await dbPool.execute("DELETE FROM google_calendar_oauth_states WHERE state_hash=?",[hashToken(state)]);if(!entry)return finish(false);
+    try{const redirectUri=originFor(req)+"/api/google-calendar/callback",body=new URLSearchParams({code,client_id:process.env.GOOGLE_CLIENT_ID,client_secret:process.env.GOOGLE_CLIENT_SECRET,redirect_uri:redirectUri,grant_type:"authorization_code"}),response=await fetch("https://oauth2.googleapis.com/token",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body}),tokens=await response.json();if(!response.ok||!tokens.access_token)return finish(false);
+      let refresh=tokens.refresh_token;if(!refresh){const [[old]]=await dbPool.execute("SELECT google_refresh_token_enc FROM booking_resources WHERE id=?",[entry.resource_id]);refresh=old?.google_refresh_token_enc?decryptGoogleToken(old.google_refresh_token_enc):"";}if(!refresh)return finish(false);
+      const profileResponse=await fetch("https://openidconnect.googleapis.com/v1/userinfo",{headers:{Authorization:"Bearer "+tokens.access_token}}),profile=await profileResponse.json(),email=cleanText(profile.email,254).toLowerCase();
+      await dbPool.execute("UPDATE booking_resources SET google_refresh_token_enc=?,google_calendar_id='primary',calendar_email=? WHERE id=? AND resource_type='agent'",[tokens.refresh_token?encryptGoogleToken(refresh):encryptGoogleToken(refresh),email,entry.resource_id]);return finish(true)
+    }catch(error){console.error("Google Calendar OAuth failed:",error.message);return finish(false)}
+  }
   if (req.method === "GET" && route === "/api/auth/session") return publicSession(req, res);
 
   const publicMediaMatch = route.match(/^\/api\/media\/(\d+)$/);
@@ -498,8 +524,8 @@ async function api(req, res, url) {
   if (req.method === "GET" && route === "/api/services") {
     if (!dbReady) return sendError(res, 503, "Appointments are being set up.");
     const [rows] = await dbPool.execute("SELECT s.id,s.name,s.description,s.duration_minutes,s.price,s.booking_mode,s.buffer_minutes,s.available_weekdays,s.start_time,s.end_time,s.min_notice_hours,s.max_advance_days,s.resource_ids,c.name AS category_name FROM services s LEFT JOIN service_categories c ON c.id=s.category_id WHERE s.active=1 ORDER BY c.name,s.created_at DESC LIMIT 100");
-    const [extras] = await dbPool.execute("SELECT id,service_id,name,description,price,duration_minutes,price_per_day FROM service_extras WHERE active=1 ORDER BY service_id,name");
-    const [resources] = await dbPool.execute("SELECT id,resource_type,name,location FROM booking_resources WHERE active=1 ORDER BY resource_type,name");
+    const [extras] = await dbPool.execute("SELECT id,service_id,name,description,price,sale_price,max_quantity,image_url,0 AS duration_minutes,price_per_day FROM service_extras WHERE active=1 ORDER BY service_id,name");
+    const [resources] = await dbPool.execute("SELECT id,resource_type,name,location,image_url FROM booking_resources WHERE active=1 ORDER BY resource_type,name");
     for (const row of rows) { row.extras = extras.filter(extra => Number(extra.service_id) === Number(row.id)); let ids=[];try{ids=JSON.parse(row.resource_ids||"[]").map(Number)}catch(_){} row.resources=resources.filter(resource=>ids.includes(Number(resource.id))); }
     return sendJson(res, 200, { services: rows });
   }
@@ -520,7 +546,9 @@ async function api(req, res, url) {
     const email = cleanText(body.email,254).toLowerCase();
     const address = cleanText(body.address,500);
     const postalCode = cleanText(body.postalCode,24);
-    const extraIds = Array.isArray(body.extraIds) ? [...new Set(body.extraIds.map(Number).filter(x => Number.isInteger(x) && x > 0))].slice(0, 20) : [];
+    const requestedExtras = Array.isArray(body.extras) ? body.extras : (Array.isArray(body.extraIds) ? body.extraIds.map(id=>({id,quantity:1})) : []);
+    const extraSelections = [...new Map(requestedExtras.map(x=>[Number(x?.id),{id:Number(x?.id),quantity:Number(x?.quantity||1)}]).filter(([id,x])=>Number.isInteger(id)&&id>0&&Number.isInteger(x.quantity)&&x.quantity>0).slice(0,20))].map(([id,x])=>x);
+    const extraIds = extraSelections.map(x=>x.id);
     if (!Number.isInteger(serviceId) || serviceId < 1 || !dates.length || dates.length > 31 || !/^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(time)) return sendError(res, 400, "Choose a service, a valid time, and between 1 and 31 booking dates.");
     if (!validEmail(email) || email !== String(session.user.email || "").toLowerCase()) return sendError(res,400,"Enter the email address linked to your customer account.");
     if (!fullName || !phone || !address || !postalCode) return sendError(res,400,"Complete your full name, mobile number, address, and PIN code.");
@@ -560,13 +588,12 @@ async function api(req, res, url) {
       let extras = [];
       if (extraIds.length) {
         const marks = extraIds.map(() => "?").join(",");
-        const [found] = await conn.execute("SELECT id,name,price,duration_minutes,price_per_day FROM service_extras WHERE service_id=? AND active=1 AND id IN (" + marks + ")", [serviceId,...extraIds]);
-        if (found.length !== extraIds.length) { await conn.rollback(); return sendError(res, 400, "One or more selected extras are no longer available."); }
-        extras = found;
+        const [found] = await conn.execute("SELECT id,name,description,price,sale_price,max_quantity,image_url,price_per_day FROM service_extras WHERE service_id=? AND active=1 AND id IN (" + marks + ")", [serviceId,...extraIds]);
+        if (found.length !== extraIds.length) { await conn.rollback(); return sendError(res, 400, "One or more selected extras are no longer available for this service."); }
+        for(const extra of found){const selection=extraSelections.find(x=>x.id===Number(extra.id)),max=Math.max(1,Number(extra.max_quantity||1)),quantity=Number(selection?.quantity||1);if(quantity>max){await conn.rollback();return sendError(res,400,"The selected quantity for "+extra.name+" exceeds its maximum of "+max+".");}extras.push({...extra,quantity,unitPrice:extra.sale_price===null||extra.sale_price===undefined?Number(extra.price):Number(extra.sale_price)})}
       }
-      const extraDuration = extras.reduce((sum,x)=>sum+Number(x.duration_minutes||0),0);
-      const slotMinutes = durationMinutes + extraDuration + Number(service.buffer_minutes||0);
-      if(service.booking_mode!=="daily"&&service.start_time&&service.end_time){const close=String(service.end_time).slice(0,5),closeMinutes=Number(close.slice(0,2))*60+Number(close.slice(3));if(occurrences.some(item=>Number(item.time.slice(0,2))*60+Number(item.time.slice(3))+slotMinutes>closeMinutes)){await conn.rollback();return sendError(res,400,"The selected extras or buffer extend beyond the service closing time.");}}
+      const slotMinutes = durationMinutes + Number(service.buffer_minutes||0);
+      if(service.booking_mode!=="daily"&&service.start_time&&service.end_time){const close=String(service.end_time).slice(0,5),closeMinutes=Number(close.slice(0,2))*60+Number(close.slice(3));if(occurrences.some(item=>Number(item.time.slice(0,2))*60+Number(item.time.slice(3))+slotMinutes>closeMinutes)){await conn.rollback();return sendError(res,400,"The service or buffer extends beyond the service closing time.");}}
       const [existing] = await conn.execute("SELECT b.starts_at,b.resource_id,DATE_FORMAT(b.starts_at,'%Y-%m-%d') AS legacy_date,DATE_FORMAT(b.starts_at,'%H:%i') AS legacy_time,b.booking_dates_json,s.duration_minutes,s.booking_mode,s.buffer_minutes FROM bookings b JOIN services s ON s.id=b.service_id WHERE b.status IN ('requested','confirmed') AND b.starts_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 365 DAY) LIMIT 5000");
       const conflicts = occurrences.some(candidate => existing.some(row => {
         let saved; try { saved = row.booking_dates_json ? JSON.parse(row.booking_dates_json) : null; } catch (_) {}
@@ -584,16 +611,16 @@ async function api(req, res, url) {
         });
       }));
       if (conflicts) { await conn.rollback(); return sendError(res, 409, "One or more selected dates or times are already booked."); }
-      const bookingTotal = occurrences.reduce((sum, occurrence) => sum + Number(service.price || 0) + extras.reduce((extraSum, extra) => extraSum + Number(extra.price || 0) * (Number(extra.price_per_day) ? 1 : (occurrences.indexOf(occurrence) === 0 ? 1 : 0)), 0), 0);
+      const bookingTotal = occurrences.reduce((sum, occurrence,index) => sum + Number(service.price || 0) + extras.reduce((extraSum, extra) => extraSum + Number(extra.unitPrice||0) * Number(extra.quantity||1) * (Number(extra.price_per_day) ? durationDays : (index === 0 ? 1 : 0)), 0), 0);
       const bookingDates = occurrences.map(item => ({date:item.date,endDate:item.endDate,time:item.time,startsAt:item.startsAt.toISOString()}));
       const first = occurrences[0].startsAt.toISOString().slice(0,19).replace("T"," ");
-      const [result] = await conn.execute("INSERT INTO bookings (user_id,service_id,starts_at,notes,booking_dates_json,booking_extras_json,total_price,resource_id,customer_full_name,customer_phone,customer_address,customer_postal_code) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", [session.user.id,serviceId,first,notes,JSON.stringify(bookingDates),JSON.stringify(extras.map(x=>({id:x.id,name:x.name,price:Number(x.price),durationMinutes:Number(x.duration_minutes),pricePerDay:Boolean(Number(x.price_per_day))}))),bookingTotal.toFixed(2),resourceId,fullName,phone,address,postalCode]);
+      const [result] = await conn.execute("INSERT INTO bookings (user_id,service_id,starts_at,notes,booking_dates_json,booking_extras_json,total_price,resource_id,customer_full_name,customer_phone,customer_address,customer_postal_code) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", [session.user.id,serviceId,first,notes,JSON.stringify(bookingDates),JSON.stringify(extras.map(x=>({id:x.id,name:x.name,price:Number(x.price),salePrice:x.sale_price===null?null:Number(x.sale_price),unitPrice:Number(x.unitPrice),quantity:Number(x.quantity),maxQuantity:Number(x.max_quantity),imageUrl:x.image_url||null,durationMinutes:0,pricePerDay:Boolean(Number(x.price_per_day))}))),bookingTotal.toFixed(2),resourceId,fullName,phone,address,postalCode]);
       for (const lockName of locks) await conn.execute("SELECT RELEASE_LOCK(?)", [lockName]);
       locks = [];
       await conn.commit();
       let emailSent = false;
       if (process.env.SMTP_PASS) emailSent = await sendMail(session.user.email, "LuMekH booking request received", "<p>Your booking request for " + service.name + " covering " + bookingDates.map(x=>x.date).join(", ") + " has been received.</p><p>Estimated total: ₹" + bookingTotal.toFixed(2) + "</p>");
-      return sendJson(res, 201, { message: "Booking request saved for " + bookingDates.length + (bookingDates.length === 1 ? " date." : " dates.") + (emailSent ? " A confirmation email was sent." : ""), bookingId: result.insertId, totalPrice: bookingTotal, emailSent });
+      return sendJson(res, 201, { message: "Booking request saved for " + bookingDates.length + (bookingDates.length === 1 ? " date." : " dates.") + (emailSent ? " A confirmation email was sent." : ""), bookingId: result.insertId, totalPrice: bookingTotal, emailSent, calendarSynced });
     } catch (error) {
       await conn.rollback();
       throw error;
@@ -804,19 +831,37 @@ async function api(req, res, url) {
       return sendJson(res,200,{message:body.active?"Product published.":"Product hidden."});
     }
     if (req.method === "GET" && route === "/api/admin/resources") {
-      const [rows]=await dbPool.query("SELECT id,resource_type,name,email,location,timezone,active FROM booking_resources ORDER BY resource_type,name");
-      return sendJson(res,200,{resources:rows});
+      const [rows]=await dbPool.query("SELECT id,resource_type,name,email,location,timezone,image_url,calendar_email,(google_refresh_token_enc IS NOT NULL) AS calendar_connected,active FROM booking_resources ORDER BY resource_type,name");
+      return sendJson(res,200,{resources:rows,googleCalendarConfigured:Boolean(process.env.GOOGLE_CLIENT_ID&&process.env.GOOGLE_CLIENT_SECRET)});
     }
     if (req.method === "POST" && route === "/api/admin/resources") {
-      const body=await readJson(req),type=body.type==="studio"?"studio":"agent",name=cleanText(body.name,160),email=cleanText(body.email,254),location=cleanText(body.location,500),timezone=cleanText(body.timezone,80)||"Asia/Kolkata";
-      if(name.length<2||(email&&!validEmail(email)))return sendError(res,400,"Enter a resource name and a valid optional email.");
-      const [result]=await dbPool.execute("INSERT INTO booking_resources (resource_type,name,email,location,timezone) VALUES (?,?,?,?,?)",[type,name,email,location,timezone]);
-      return sendJson(res,201,{id:result.insertId,message:"Agent or studio added."});
+      const body=await readJson(req),type=body.type==="studio"?"studio":"agent",name=cleanText(body.name,160),email=cleanText(body.email,254),location=cleanText(body.location,500),timezone=cleanText(body.timezone,80)||"Asia/Kolkata",imageUrl=cleanText(body.imageUrl,1000);
+      if(name.length<2||(email&&!validEmail(email))||(imageUrl&&!/^https:\/\//i.test(imageUrl)&&!/^\/api\/media\/\d+$/.test(imageUrl)))return sendError(res,400,"Enter a company or studio name, a valid optional email, and a valid image.");
+      const [result]=await dbPool.execute("INSERT INTO booking_resources (resource_type,name,email,location,timezone,image_url) VALUES (?,?,?,?,?,?)",[type,name,email,location,timezone,imageUrl||null]);
+      return sendJson(res,201,{id:result.insertId,message:type==="agent"?"Company added.":"Studio added."});
     }
     const resourceMatch=route.match(new RegExp("^/api/admin/resources/([0-9]+)$"));
     if(req.method==="PATCH"&&resourceMatch) {
-      const body=await readJson(req);if(typeof body.active!=="boolean")return sendError(res,400,"Choose whether this resource is active.");
-      await dbPool.execute("UPDATE booking_resources SET active=? WHERE id=?",[body.active?1:0,Number(resourceMatch[1])]);return sendJson(res,200,{message:"Resource updated."});
+      const body=await readJson(req),id=Number(resourceMatch[1]);
+      if(typeof body.active==="boolean"){await dbPool.execute("UPDATE booking_resources SET active=? WHERE id=?",[body.active?1:0,id]);return sendJson(res,200,{message:"Resource visibility updated."});}
+      const type=body.type==="studio"?"studio":"agent",name=cleanText(body.name,160),email=cleanText(body.email,254),location=cleanText(body.location,500),timezone=cleanText(body.timezone,80)||"Asia/Kolkata",imageUrl=cleanText(body.imageUrl,1000);
+      if(name.length<2||(email&&!validEmail(email))||(imageUrl&&!/^https:\/\//i.test(imageUrl)&&!/^\/api\/media\/\d+$/.test(imageUrl)))return sendError(res,400,"Enter a company or studio name, a valid optional email, and a valid image.");
+      const [result]=await dbPool.execute("UPDATE booking_resources SET resource_type=?,name=?,email=?,location=?,timezone=?,image_url=? WHERE id=?",[type,name,email,location,timezone,imageUrl||null,id]);
+      if(!result.affectedRows)return sendError(res,404,"That company or studio was not found.");
+      return sendJson(res,200,{message:"Company or studio updated."});
+    }
+    if(req.method==="DELETE"&&resourceMatch){
+      const id=Number(resourceMatch[1]),conn=await dbPool.getConnection();try{await conn.beginTransaction();const [[resource]]=await conn.execute("SELECT id FROM booking_resources WHERE id=? LIMIT 1",[id]);if(!resource){await conn.rollback();return sendError(res,404,"That company or studio was not found.");}const [services]=await conn.query("SELECT id,resource_ids FROM services WHERE resource_ids IS NOT NULL");for(const service of services){let ids=[];try{ids=JSON.parse(service.resource_ids||"[]").map(Number)}catch(_){}const next=ids.filter(x=>x!==id);if(next.length!==ids.length)await conn.execute("UPDATE services SET resource_ids=? WHERE id=?",[JSON.stringify(next),service.id]);}await conn.execute("UPDATE booking_resources SET active=0 WHERE id=?",[id]);await conn.commit();return sendJson(res,200,{message:"Company or studio removed from active services."});}catch(error){await conn.rollback();throw error}finally{conn.release()}
+    }
+    const calendarConnect=route.match(/^\/api\/admin\/resources\/(\d+)\/calendar\/connect$/);
+    if(req.method==="GET"&&calendarConnect){
+      if(!process.env.GOOGLE_CLIENT_ID||!process.env.GOOGLE_CLIENT_SECRET)return sendError(res,503,"Google Calendar connection is not configured yet. Add Google OAuth credentials in Hostinger first.");
+      const id=Number(calendarConnect[1]),[[resource]]=await dbPool.execute("SELECT id FROM booking_resources WHERE id=? AND resource_type='agent' AND active=1 LIMIT 1",[id]);if(!resource)return sendError(res,404,"That company is not active.");
+      const state=randomBytes(32).toString("hex");await dbPool.execute("INSERT INTO google_calendar_oauth_states (state_hash,resource_id,user_id,expires_at) VALUES (?,?,?,DATE_ADD(UTC_TIMESTAMP(),INTERVAL 10 MINUTE))",[hashToken(state),id,session.user.id]);
+      const redirectUri=originFor(req)+"/api/google-calendar/callback",params=new URLSearchParams({client_id:process.env.GOOGLE_CLIENT_ID,redirect_uri:redirectUri,response_type:"code",scope:"openid email https://www.googleapis.com/auth/calendar.events",access_type:"offline",prompt:"consent",state,include_granted_scopes:"true"});res.writeHead(302,{Location:"https://accounts.google.com/o/oauth2/v2/auth?"+params.toString(),"Cache-Control":"no-store"});return res.end();
+    }
+    if(req.method==="POST"&&calendarConnect){
+      const body=await readJson(req);if(body.action!=="disconnect")return sendError(res,400,"Choose a calendar action.");await dbPool.execute("UPDATE booking_resources SET google_refresh_token_enc=NULL,calendar_email='' WHERE id=?",[Number(calendarConnect[1])]);return sendJson(res,200,{message:"Company calendar disconnected."});
     }
     if (req.method === "GET" && route === "/api/admin/service-categories") {
       const [rows] = await dbPool.query("SELECT id,name,description,active FROM service_categories ORDER BY name");
@@ -829,20 +874,24 @@ async function api(req, res, url) {
       catch(error) { if(error.code==="ER_DUP_ENTRY")return sendError(res,409,"That service category already exists.");throw error; }
     }
     if (req.method === "GET" && route === "/api/admin/service-extras") {
-      const [rows]=await dbPool.query("SELECT e.id,e.service_id,e.name,e.description,e.price,e.duration_minutes,e.price_per_day,e.active,s.name AS service_name FROM service_extras e JOIN services s ON s.id=e.service_id ORDER BY s.name,e.name");
+      const [rows]=await dbPool.query("SELECT e.id,e.service_id,e.name,e.description,e.price,e.sale_price,e.max_quantity,e.image_url,0 AS duration_minutes,e.price_per_day,e.active,s.name AS service_name FROM service_extras e JOIN services s ON s.id=e.service_id ORDER BY s.name,e.name");
       return sendJson(res,200,{extras:rows});
     }
     if (req.method === "POST" && route === "/api/admin/service-extras") {
-      const body=await readJson(req),serviceId=Number(body.serviceId),name=cleanText(body.name,160),description=cleanText(body.description,1000),price=Number(body.price),duration=Number(body.durationMinutes||0);
-      if(!Number.isInteger(serviceId)||serviceId<1||name.length<2||!Number.isFinite(price)||price<0||!Number.isInteger(duration)||duration<0||duration>720)return sendError(res,400,"Enter a service, extra name, valid price, and duration.");
-      const [result]=await dbPool.execute("INSERT INTO service_extras (service_id,name,description,price,duration_minutes,price_per_day) SELECT ?,?,?,?,?,? FROM services WHERE id=?",[serviceId,name,description,price,duration,body.pricePerDay?1:0,serviceId]);
-      if(!result.affectedRows)return sendError(res,404,"That service was not found.");
-      return sendJson(res,201,{id:result.insertId,message:"Extra added."});
+      const body=await readJson(req),serviceId=Number(body.serviceId),name=cleanText(body.name,160),description=cleanText(body.description,1000),price=Number(body.price),salePrice=body.salePrice===""||body.salePrice===null||body.salePrice===undefined?null:Number(body.salePrice),maxQuantity=Number(body.maxQuantity||1),imageUrl=cleanText(body.imageUrl,1000);
+      if(!Number.isInteger(serviceId)||serviceId<1||name.length<2||!Number.isFinite(price)||price<0||(salePrice!==null&&(!Number.isFinite(salePrice)||salePrice<0||salePrice>price))||!Number.isInteger(maxQuantity)||maxQuantity<1||maxQuantity>100||(imageUrl&&!/^https:\/\//i.test(imageUrl)&&!/^\/api\/media\/\d+$/.test(imageUrl)))return sendError(res,400,"Enter a service, name, valid MRP, sale price at or below MRP, maximum quantity (1–100), and valid image.");
+      const [result]=await dbPool.execute("INSERT INTO service_extras (service_id,name,description,price,sale_price,max_quantity,image_url,duration_minutes,price_per_day) SELECT ?,?,?,?,?,?,?,0,? FROM services WHERE id=? AND active=1",[serviceId,name,description,price,salePrice,maxQuantity,imageUrl||null,body.pricePerDay?1:0,serviceId]);
+      if(!result.affectedRows)return sendError(res,404,"Choose an active service for this extra.");
+      return sendJson(res,201,{id:result.insertId,message:"Extra added to service."});
     }
-    const extraMatch=route.match(new RegExp("^/api/admin/service-extras/([0-9]+)$"));
+    const extraMatch=route.match(new RegExp("^\/api\/admin\/service-extras\/([0-9]+)$"));
     if(req.method==="PATCH"&&extraMatch) {
-      const body=await readJson(req);if(typeof body.active!=="boolean")return sendError(res,400,"Choose whether the extra is active.");
-      await dbPool.execute("UPDATE service_extras SET active=? WHERE id=?",[body.active?1:0,Number(extraMatch[1])]);return sendJson(res,200,{message:"Extra updated."});
+      const id=Number(extraMatch[1]),body=await readJson(req);if(typeof body.active==="boolean"){await dbPool.execute("UPDATE service_extras SET active=? WHERE id=?",[body.active?1:0,id]);return sendJson(res,200,{message:"Extra visibility updated."});}
+      const serviceId=Number(body.serviceId),name=cleanText(body.name,160),description=cleanText(body.description,1000),price=Number(body.price),salePrice=body.salePrice===""||body.salePrice===null||body.salePrice===undefined?null:Number(body.salePrice),maxQuantity=Number(body.maxQuantity||1),imageUrl=cleanText(body.imageUrl,1000);
+      if(!Number.isInteger(serviceId)||serviceId<1||name.length<2||!Number.isFinite(price)||price<0||(salePrice!==null&&(!Number.isFinite(salePrice)||salePrice<0||salePrice>price))||!Number.isInteger(maxQuantity)||maxQuantity<1||maxQuantity>100||(imageUrl&&!/^https:\/\//i.test(imageUrl)&&!/^\/api\/media\/\d+$/.test(imageUrl)))return sendError(res,400,"Enter a service, name, valid MRP, sale price at or below MRP, maximum quantity (1–100), and valid image.");
+      const [result]=await dbPool.execute("UPDATE service_extras SET service_id=?,name=?,description=?,price=?,sale_price=?,max_quantity=?,image_url=?,duration_minutes=0,price_per_day=? WHERE id=? AND EXISTS (SELECT id FROM services WHERE id=? AND active=1)",[serviceId,name,description,price,salePrice,maxQuantity,imageUrl||null,body.pricePerDay?1:0,id,serviceId]);
+      if(!result.affectedRows)return sendError(res,404,"Choose an active service and a valid extra.");
+      return sendJson(res,200,{message:"Extra updated."});
     }
     if (req.method === "GET" && route === "/api/admin/booking-settings") {
       const [rows]=await dbPool.query("SELECT setting_key,setting_value FROM booking_settings");
