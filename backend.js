@@ -954,6 +954,27 @@ async function api(req, res, url) {
       const [rows] = await dbPool.query("SELECT b.id,b.starts_at,b.booking_dates_json,b.booking_extras_json,b.total_price,b.status,b.notes,b.created_at,b.customer_full_name,b.customer_phone,b.customer_address,b.customer_postal_code,COALESCE(NULLIF(b.customer_full_name,''),u.name) AS customer_name,u.email AS customer_email,s.name AS service_name,s.duration_minutes,s.booking_mode,s.price,r.name AS resource_name,r.resource_type FROM bookings b JOIN app_users u ON u.id=b.user_id JOIN services s ON s.id=b.service_id LEFT JOIN booking_resources r ON r.id=b.resource_id ORDER BY b.starts_at DESC LIMIT 300");
       return sendJson(res, 200, { bookings: rows });
     }
+    const orderDetailRoute=route.match(/^\/api\/admin\/orders\/(\d+)(\/pdf)?$/);
+    if(req.method==="GET"&&orderDetailRoute){
+      const id=Number(orderDetailRoute[1]);
+      const [[order]]=await dbPool.execute("SELECT o.id,o.total,o.status,o.full_name,o.phone,o.address,o.city,o.postal_code,o.created_at,u.name AS account_name,u.email AS customer_email FROM orders o JOIN app_users u ON u.id=o.user_id WHERE o.id=? LIMIT 1",[id]);
+      if(!order)return sendError(res,404,"Order not found.");
+      const [items]=await dbPool.execute("SELECT product_id,product_name,quantity,unit_price,(quantity*unit_price) AS line_total FROM order_items WHERE order_id=? ORDER BY id",[id]);
+      if(!orderDetailRoute[2])return sendJson(res,200,{order,items});
+      const plain=value=>String(value??"").replace(/₹/g,"INR ").replace(/[^\x20-\x7E]/g,"").replace(/\s+/g," ").trim();
+      const wrap=(value,width=88)=>{const words=plain(value).split(" ");const lines=[];let line="";for(const word of words){if((line+" "+word).trim().length>width&&line){lines.push(line);line=word}else line=(line+" "+word).trim()}if(line)lines.push(line);return lines.length?lines:[""]};
+      const lines=[["LuMekH Order Invoice","#"+order.id],["Date",new Date(order.created_at).toLocaleString("en-IN",{timeZone:"Asia/Kolkata"})],["Status",order.status],["Customer",order.full_name],["Account",order.customer_email],["Phone",order.phone],["Address",[order.address,order.city,order.postal_code].filter(Boolean).join(", ")],"","Purchased items"];
+      const pdfLines=[];for(const row of lines){if(Array.isArray(row))pdfLines.push(...wrap(row[0]+": "+row[1]));else pdfLines.push(...wrap(row))}
+      for(const item of items)pdfLines.push(...wrap(item.product_name+" | Qty "+item.quantity+" | INR "+Number(item.unit_price).toFixed(2)+" each | INR "+Number(item.line_total).toFixed(2)));
+      pdfLines.push("","Order total: INR "+Number(order.total).toFixed(2));
+      const pages=[];for(let i=0;i<pdfLines.length;i+=48)pages.push(pdfLines.slice(i,i+48));
+      const objects=["","<< /Type /Catalog /Pages 2 0 R >>","","<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"];
+      const pageRefs=[];
+      for(let p=0;p<pages.length;p++){const pageObj=5+p*2,contentObj=pageObj+1;pageRefs.push(pageObj+" 0 R");let stream="BT\n/F1 10 Tf\n50 790 Td\n14 TL\n";for(const line of pages[p])stream+="("+plain(line).replace(/\\/g,"\\\\").replace(/\(/g,"\\(").replace(/\)/g,"\\)")+ ") Tj\nT*\n";stream+="ET";objects[pageObj]="<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents "+contentObj+" 0 R >>";objects[contentObj]="<< /Length "+Buffer.byteLength(stream,"ascii")+" >>\nstream\n"+stream+"\nendstream"}
+      objects[2]="<< /Type /Pages /Kids ["+pageRefs.join(" ")+"] /Count "+pages.length+" >>";
+      let pdf="%PDF-1.4\n",offsets=[0];for(let i=1;i<objects.length;i++){offsets[i]=Buffer.byteLength(pdf,"ascii");pdf+=i+" 0 obj\n"+objects[i]+"\nendobj\n"}const xref=Buffer.byteLength(pdf,"ascii");pdf+="xref\n0 "+objects.length+"\n0000000000 65535 f \n";for(let i=1;i<objects.length;i++)pdf+=String(offsets[i]).padStart(10,"0")+" 00000 n \n";pdf+="trailer\n<< /Size "+objects.length+" /Root 1 0 R >>\nstartxref\n"+xref+"\n%%EOF";
+      const buffer=Buffer.from(pdf,"ascii");res.writeHead(200,{"Content-Type":"application/pdf","Content-Disposition":"attachment; filename=\"LuMekH-order-"+id+".pdf\"","Content-Length":buffer.length});res.end(buffer);return;
+    }
     if (req.method === "GET" && route === "/api/admin/orders") {
       const [rows] = await dbPool.query("SELECT o.id,o.total,o.status,o.full_name,o.phone,o.address,o.city,o.postal_code,o.created_at,u.email AS customer_email FROM orders o JOIN app_users u ON u.id=o.user_id ORDER BY o.created_at DESC LIMIT 300");
       return sendJson(res, 200, { orders: rows });
