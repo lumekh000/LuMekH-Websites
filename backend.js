@@ -510,37 +510,54 @@ async function api(req, res, url) {
     if (!session) return;
     const body = await readJson(req);
     const items = Array.isArray(body.items) ? body.items.slice(0, 30) : [];
-    const fullName = cleanText(body.fullName, 160);
+    const fullName = cleanText(body.fullName, 160) || session.user.name;
     const phone = cleanText(body.phone, 40);
     const address = cleanText(body.address, 500);
     const city = cleanText(body.city, 120);
     const postalCode = cleanText(body.postalCode, 24);
-    if (!items.length || !fullName || !phone || !address || !city || !postalCode) return sendError(res, 400, "Add items and complete the delivery details.");
+    if (!items.length) return sendError(res, 400, "Add at least one item to your basket.");
     const conn = await dbPool.getConnection();
     try {
       await conn.beginTransaction();
       let total = 0;
-      const products = [];
+      const lines = [];
+      let requiresShipping = false;
       for (const item of items) {
         const productId = Number(item.productId);
         const quantity = Number(item.quantity);
         if (!Number.isInteger(productId) || productId < 1 || !Number.isInteger(quantity) || quantity < 1 || quantity > 25) { await conn.rollback(); return sendError(res, 400, "One of the basket items is not valid."); }
-        const [found] = await conn.execute("SELECT id,name,price,stock FROM products WHERE id=? AND active=1 LIMIT 1 FOR UPDATE", [productId]);
+        const [found] = await conn.execute("SELECT id,name,price,sale_price,stock,image_url,sku,product_type FROM products WHERE id=? AND active=1 LIMIT 1 FOR UPDATE", [productId]);
         if (!found.length) { await conn.rollback(); return sendError(res, 409, "A product in your basket is no longer available."); }
-        const product = found[0];
-        if (product.stock !== null && Number(product.stock) < quantity) { await conn.rollback(); return sendError(res, 409, product.name + " has limited stock. Update your basket and try again."); }
-        total += Number(product.price) * quantity;
-        products.push({ id: product.id, name: product.name, price: Number(product.price), quantity, stock: product.stock });
+        const product = found[0], type = product.product_type || "simple";
+        let variant = null;
+        if (type === "variable") {
+          const variantId = Number(item.variantId);
+          if (!Number.isInteger(variantId) || variantId < 1) { await conn.rollback(); return sendError(res, 400, "Choose a variation for " + product.name + "."); }
+          const [variants] = await conn.execute("SELECT id,name,sku,price,stock FROM product_variants WHERE id=? AND product_id=? AND active=1 LIMIT 1 FOR UPDATE", [variantId,productId]);
+          if (!variants.length) { await conn.rollback(); return sendError(res, 409, "That product option is no longer available."); }
+          variant = variants[0];
+        }
+        const unitPrice = variant && variant.price !== null ? Number(variant.price) : Number(product.sale_price !== null ? product.sale_price : product.price);
+        const stock = variant && variant.stock !== null ? variant.stock : product.stock;
+        if (stock !== null && Number(stock) < quantity) { await conn.rollback(); return sendError(res, 409, product.name + (variant ? " · " + variant.name : "") + " has limited stock. Update your basket and try again."); }
+        if (type !== "digital") requiresShipping = true;
+        total += unitPrice * quantity;
+        lines.push({id:product.id,name:product.name,displayName:product.name+(variant?" · "+variant.name:""),price:unitPrice,quantity,stock,type,variantId:variant?variant.id:null,sku:variant?variant.sku:product.sku,imageUrl:product.image_url});
       }
-      const [order] = await conn.execute("INSERT INTO orders (user_id,total,full_name,phone,address,city,postal_code) VALUES (?,?,?,?,?,?,?)", [session.user.id, total, fullName, phone, address, city, postalCode]);
-      for (const product of products) {
-        await conn.execute("INSERT INTO order_items (order_id,product_id,product_name,quantity,unit_price) VALUES (?,?,?,?,?)", [order.insertId, product.id, product.name, product.quantity, product.price]);
-        if (product.stock !== null) await conn.execute("UPDATE products SET stock=stock-? WHERE id=?", [product.quantity, product.id]);
+      if (requiresShipping && (!fullName || !phone || !address || !city || !postalCode)) { await conn.rollback(); return sendError(res, 400, "Complete the delivery details for physical products."); }
+      const [order] = await conn.execute("INSERT INTO orders (user_id,total,full_name,phone,address,city,postal_code,subtotal) VALUES (?,?,?,?,?,?,?,?)", [session.user.id,total,fullName,phone,address,city,postalCode,total]);
+      for (const line of lines) {
+        const lineTotal = line.price * line.quantity;
+        await conn.execute("INSERT INTO order_items (order_id,product_id,product_name,quantity,unit_price,variant_id,sku,image_url,line_total) VALUES (?,?,?,?,?,?,?,?,?)", [order.insertId,line.id,line.displayName,line.quantity,line.price,line.variantId,line.sku,line.imageUrl,lineTotal]);
+        if (line.stock !== null) {
+          if (line.variantId) await conn.execute("UPDATE product_variants SET stock=stock-? WHERE id=? AND stock IS NOT NULL",[line.quantity,line.variantId]);
+          else await conn.execute("UPDATE products SET stock=stock-? WHERE id=? AND stock IS NOT NULL",[line.quantity,line.id]);
+        }
       }
       await conn.commit();
       let emailSent = false;
-      if (process.env.SMTP_PASS) emailSent = await sendMail(session.user.email, "LuMekH order received", "<p>Your order #" + order.insertId + " has been received. Total: ₹" + total.toFixed(2) + ".</p><p>Payment will be confirmed separately.</p>");
-      return sendJson(res, 201, { message: "Order request saved. Payment will be confirmed separately.", orderId: order.insertId, total, emailSent });
+      if (process.env.SMTP_PASS) emailSent = await sendMail(session.user.email,"LuMekH order received","<p>Your order #"+order.insertId+" has been received. Total: ₹"+total.toFixed(2)+".</p><p>Payment will be confirmed separately.</p>");
+      return sendJson(res,201,{message:"Order request saved. Payment will be confirmed separately.",orderId:order.insertId,total,emailSent});
     } catch (error) {
       await conn.rollback();
       throw error;
