@@ -463,3 +463,9 @@ html{scroll-behavior:smooth}
 .menu-popover .navlink{display:flex;width:100%;align-items:center;min-height:44px;padding:11px 13px;border-radius:11px;font-weight:700;color:var(--ink)}
 .menu-popover .navlink:hover,.menu-popover .navlink:focus-visible{background:var(--hover-pink);color:var(--hover-pink-text)}
 @media(max-width:720px){.site-menu{width:auto!important;margin-left:auto;align-self:flex-end}.menu-popover{right:0;top:calc(100% + 8px)}}
+
+/* Keep all requested customer navigation links visible in one horizontal row. */
+.site-menu{display:flex;align-items:center;justify-content:flex-end;gap:4px!important;flex-wrap:nowrap!important}
+.site-menu>.navlink{white-space:nowrap}
+@media(max-width:720px){.site-menu{width:100%!important;align-self:stretch!important;justify-content:center!important;gap:2px!important}.site-menu>.navlink{padding:8px 10px;font-size:13px}}
+@media(max-width:380px){.site-menu{gap:0!important}.site-menu>.navlink{padding:8px 7px;font-size:12px}}
