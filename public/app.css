@@ -787,3 +787,8 @@ body:has(.topbar nav.site-menu) .topbar .brand-copy small{color:#d7d1cc!importan
 .store-toolbar,.services-filterbar{width:max-content!important;max-width:100%!important}
 .store-search.filter-search-panel[hidden],.service-search.filter-search-panel[hidden]{display:none!important}
 @media(max-width:720px){.store-toolbar,.services-filterbar{width:100%!important}}
+
+/* Keep the inactive customer links legible on the black header */
+body:has(.topbar nav.site-menu) .topbar nav.site-menu>.navlink:not(.active):not([aria-current="page"]){color:#fff!important}
+body:has(.topbar nav.site-menu) .topbar nav.site-menu>.navlink:not(.active):not([aria-current="page"]):hover,
+body:has(.topbar nav.site-menu) .topbar nav.site-menu>.navlink:not(.active):not([aria-current="page"]):focus-visible{background:#292725!important;color:#fff!important;border-color:#41403e!important}
