@@ -649,7 +649,7 @@ async function api(req, res, url) {
         total += unitPrice * quantity;
         lines.push({id:product.id,name:product.name,displayName:product.name+(variant?" · "+variant.name:""),price:unitPrice,quantity,stock,type,variantId:variant?variant.id:null,sku:variant?variant.sku:product.sku,imageUrl:product.image_url});
       }
-      if (requiresShipping && (!fullName || !phone || !address || !postalCode)) { await conn.rollback(); return sendError(res, 400, "Complete the delivery details for physical products."); }
+      if (!fullName || !phone || !address || !postalCode) { await conn.rollback(); return sendError(res, 400, "Complete your full name, mobile number, address, and PIN code."); }
       const [order] = await conn.execute("INSERT INTO orders (user_id,total,full_name,phone,address,city,postal_code,subtotal) VALUES (?,?,?,?,?,?,?,?)", [session.user.id,total,fullName,phone,address,city,postalCode,total]);
       for (const line of lines) {
         const lineTotal = line.price * line.quantity;
