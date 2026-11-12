@@ -8,7 +8,7 @@ const nodemailer = require("nodemailer");
 
 const scryptAsync = promisify(scrypt);
 const publicDir = path.join(__dirname, "public");
-const adminEmail = String(process.env.ADMIN_EMAIL || "lumekh@lumekh.com").trim().toLowerCase();
+const adminEmail = String(process.env.ADMIN_EMAIL || "lumekh000@gmail.com").trim().toLowerCase();
 const mailUser = process.env.SMTP_USER || "noreply@lumekh.com";
 const mimeTypes = { ".css": "text/css; charset=utf-8", ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".webp": "image/webp" };
 
@@ -84,6 +84,11 @@ async function initializeDatabase() {
       if (Number(columns[0].found) === 0) await dbPool.query("ALTER TABLE `" + table + "` ADD COLUMN `" + column + "` " + definition);
     }
     await dbPool.query("INSERT IGNORE INTO store_settings (setting_key,setting_value) VALUES ('currency','INR'),('currency_symbol','₹'),('tax_enabled','0'),('tax_rate','0'),('tax_label','GST'),('shipping_flat_rate','0'),('shipping_free_threshold','0'),('shipping_pickup_enabled','1'),('shipping_local_delivery_enabled','0'),('shipping_local_delivery_rate','0'),('coupon_enabled','1'),('store_name','LuMekH™'),('low_stock_threshold','5')");
+    const [ownerRows] = await dbPool.execute("SELECT id FROM app_users WHERE LOWER(email)=? AND email_verified=1 LIMIT 1",[adminEmail]);
+    if (ownerRows.length) {
+      await dbPool.execute("UPDATE app_users SET role='customer' WHERE role='admin' AND id<>?",[ownerRows[0].id]);
+      await dbPool.execute("UPDATE app_users SET role='admin' WHERE id=?",[ownerRows[0].id]);
+    }
     dbReady = true;
     console.log("LuMekH database is ready.");
   } catch (error) {
@@ -259,9 +264,11 @@ async function api(req, res, url) {
       const userId = tokens[0].user_id;
       await conn.execute("UPDATE app_users SET email_verified=1 WHERE id=?", [userId]);
       await conn.execute("DELETE FROM email_tokens WHERE token_hash=?", [hashToken(token)]);
-      const [admins] = await conn.execute("SELECT id FROM app_users WHERE role='admin' LIMIT 1");
       const [users] = await conn.execute("SELECT email FROM app_users WHERE id=? LIMIT 1", [userId]);
-      if (!admins.length && users.length && users[0].email.toLowerCase() === adminEmail) await conn.execute("UPDATE app_users SET role='admin' WHERE id=?", [userId]);
+      if (users.length && users[0].email.toLowerCase() === adminEmail) {
+        await conn.execute("UPDATE app_users SET role='customer' WHERE role='admin' AND id<>?", [userId]);
+        await conn.execute("UPDATE app_users SET role='admin' WHERE id=?", [userId]);
+      }
       await conn.commit();
       const [rows] = await conn.execute("SELECT role FROM app_users WHERE id=?", [userId]);
       return sendJson(res, 200, { message: "Email confirmed. You can now sign in.", role: rows[0].role });
