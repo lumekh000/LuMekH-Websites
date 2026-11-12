@@ -34,6 +34,10 @@ const schema = [
   "CREATE TABLE IF NOT EXISTS email_tokens (token_hash CHAR(64) NOT NULL PRIMARY KEY, user_id BIGINT UNSIGNED NOT NULL, purpose ENUM('verify','reset') NOT NULL, expires_at DATETIME NOT NULL, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, INDEX idx_email_tokens_user (user_id), CONSTRAINT fk_email_tokens_user FOREIGN KEY (user_id) REFERENCES app_users(id) ON DELETE CASCADE) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
   "CREATE TABLE IF NOT EXISTS products (id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, name VARCHAR(160) NOT NULL, description TEXT NOT NULL, price DECIMAL(10,2) NOT NULL, stock INT NULL, image_url VARCHAR(1000) NULL, active TINYINT(1) NOT NULL DEFAULT 1, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, INDEX idx_products_active (active, created_at)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
   "CREATE TABLE IF NOT EXISTS services (id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, name VARCHAR(160) NOT NULL, description TEXT NOT NULL, duration_minutes SMALLINT UNSIGNED NOT NULL DEFAULT 60, price DECIMAL(10,2) NOT NULL DEFAULT 0, active TINYINT(1) NOT NULL DEFAULT 1, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, INDEX idx_services_active (active, created_at)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+  "CREATE TABLE IF NOT EXISTS service_categories (id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, name VARCHAR(120) NOT NULL UNIQUE, description VARCHAR(1000) NOT NULL DEFAULT '', active TINYINT(1) NOT NULL DEFAULT 1, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+  "CREATE TABLE IF NOT EXISTS booking_resources (id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, resource_type ENUM('agent','studio') NOT NULL, name VARCHAR(160) NOT NULL, email VARCHAR(254) NOT NULL DEFAULT '', location VARCHAR(500) NOT NULL DEFAULT '', timezone VARCHAR(80) NOT NULL DEFAULT 'Asia/Kolkata', active TINYINT(1) NOT NULL DEFAULT 1, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, INDEX idx_booking_resources (resource_type,active,name)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+  "CREATE TABLE IF NOT EXISTS service_extras (id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, service_id BIGINT UNSIGNED NOT NULL, name VARCHAR(160) NOT NULL, description VARCHAR(1000) NOT NULL DEFAULT '', price DECIMAL(10,2) NOT NULL DEFAULT 0, duration_minutes SMALLINT UNSIGNED NOT NULL DEFAULT 0, price_per_day TINYINT(1) NOT NULL DEFAULT 0, active TINYINT(1) NOT NULL DEFAULT 1, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, INDEX idx_service_extras (service_id,active), CONSTRAINT fk_service_extra_service FOREIGN KEY (service_id) REFERENCES services(id) ON DELETE CASCADE) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+  "CREATE TABLE IF NOT EXISTS booking_settings (setting_key VARCHAR(80) NOT NULL PRIMARY KEY, setting_value TEXT NOT NULL, updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
   "CREATE TABLE IF NOT EXISTS bookings (id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, user_id BIGINT UNSIGNED NOT NULL, service_id BIGINT UNSIGNED NOT NULL, starts_at DATETIME NOT NULL, status ENUM('requested','confirmed','cancelled','completed') NOT NULL DEFAULT 'requested', notes VARCHAR(1000) NOT NULL DEFAULT '', created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, INDEX idx_bookings_start (starts_at, status), INDEX idx_bookings_user (user_id, starts_at), CONSTRAINT fk_bookings_user FOREIGN KEY (user_id) REFERENCES app_users(id), CONSTRAINT fk_bookings_service FOREIGN KEY (service_id) REFERENCES services(id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
   "CREATE TABLE IF NOT EXISTS orders (id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, user_id BIGINT UNSIGNED NOT NULL, total DECIMAL(10,2) NOT NULL, status ENUM('new','processing','completed','cancelled') NOT NULL DEFAULT 'new', full_name VARCHAR(160) NOT NULL, phone VARCHAR(40) NOT NULL, address VARCHAR(500) NOT NULL, city VARCHAR(120) NOT NULL, postal_code VARCHAR(24) NOT NULL, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, INDEX idx_orders_user (user_id, created_at), INDEX idx_orders_created (created_at), CONSTRAINT fk_orders_user FOREIGN KEY (user_id) REFERENCES app_users(id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
   "CREATE TABLE IF NOT EXISTS order_items (id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, order_id BIGINT UNSIGNED NOT NULL, product_id BIGINT UNSIGNED NOT NULL, product_name VARCHAR(160) NOT NULL, quantity SMALLINT UNSIGNED NOT NULL, unit_price DECIMAL(10,2) NOT NULL, INDEX idx_order_items_order (order_id), CONSTRAINT fk_order_items_order FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
@@ -56,6 +60,19 @@ async function initializeDatabase() {
     for (const sql of schema) await dbPool.query(sql);
     for (const [table,column,definition] of [
       ["app_users","phone","VARCHAR(40) NOT NULL DEFAULT ''"],
+      ["services","category_id","BIGINT UNSIGNED NULL"],
+      ["services","resource_ids","TEXT NULL"],
+      ["bookings","resource_id","BIGINT UNSIGNED NULL"],
+      ["services","booking_mode","ENUM('hourly','daily') NOT NULL DEFAULT 'hourly'"],
+      ["services","buffer_minutes","SMALLINT UNSIGNED NOT NULL DEFAULT 0"],
+      ["services","available_weekdays","VARCHAR(40) NOT NULL DEFAULT '0,1,2,3,4,5,6'"],
+      ["services","start_time","TIME NULL"],
+      ["services","end_time","TIME NULL"],
+      ["services","min_notice_hours","SMALLINT UNSIGNED NOT NULL DEFAULT 0"],
+      ["services","max_advance_days","SMALLINT UNSIGNED NOT NULL DEFAULT 365"],
+      ["bookings","booking_dates_json","TEXT NULL"],
+      ["bookings","booking_extras_json","TEXT NULL"],
+      ["bookings","total_price","DECIMAL(10,2) NOT NULL DEFAULT 0"],
       ["products","sku","VARCHAR(64) NULL"],
       ["products","sale_price","DECIMAL(10,2) NULL"],
       ["products","category_id","BIGINT UNSIGNED NULL"],
@@ -467,42 +484,128 @@ async function api(req, res, url) {
     catch(error){if(error.code==="ER_DUP_ENTRY")return sendError(res,409,"You already reviewed this product.");throw error;}
   }
 
+  if (req.method === "GET" && route === "/api/booking-settings") {
+    if (!dbReady) return sendError(res,503,"Booking settings are loading.");
+    const [rows]=await dbPool.query("SELECT setting_key,setting_value FROM booking_settings");
+    const settings=Object.fromEntries(rows.map(row=>[row.setting_key,row.setting_value]));
+    return sendJson(res,200,{settings:{timezone:settings.timezone||"Asia/Kolkata",slotIntervalMinutes:Number(settings.slot_interval_minutes||30),cancellationNoticeHours:Number(settings.cancellation_notice_hours||24),customerCanCancel:settings.customer_can_cancel!=="0"}});
+  }
+
   if (req.method === "GET" && route === "/api/services") {
     if (!dbReady) return sendError(res, 503, "Appointments are being set up.");
-    const [rows] = await dbPool.execute("SELECT id,name,description,duration_minutes,price FROM services WHERE active=1 ORDER BY created_at DESC LIMIT 100");
+    const [rows] = await dbPool.execute("SELECT s.id,s.name,s.description,s.duration_minutes,s.price,s.booking_mode,s.buffer_minutes,s.available_weekdays,s.start_time,s.end_time,s.min_notice_hours,s.max_advance_days,s.resource_ids,c.name AS category_name FROM services s LEFT JOIN service_categories c ON c.id=s.category_id WHERE s.active=1 ORDER BY c.name,s.created_at DESC LIMIT 100");
+    const [extras] = await dbPool.execute("SELECT id,service_id,name,description,price,duration_minutes,price_per_day FROM service_extras WHERE active=1 ORDER BY service_id,name");
+    const [resources] = await dbPool.execute("SELECT id,resource_type,name,location FROM booking_resources WHERE active=1 ORDER BY resource_type,name");
+    for (const row of rows) { row.extras = extras.filter(extra => Number(extra.service_id) === Number(row.id)); let ids=[];try{ids=JSON.parse(row.resource_ids||"[]").map(Number)}catch(_){} row.resources=resources.filter(resource=>ids.includes(Number(resource.id))); }
     return sendJson(res, 200, { services: rows });
   }
 
   if (req.method === "POST" && route === "/api/bookings") {
     const session = await requireSession(req, res);
     if (!session) return;
+    if (session.user.role !== "customer") return sendError(res,403,"Sign in with a customer account to request a booking.");
     const body = await readJson(req);
     const serviceId = Number(body.serviceId);
-    const startsAt = new Date(body.startsAt);
+    const resourceId = Number(body.resourceId)||null;
+    const dates = Array.isArray(body.dates) ? [...new Set(body.dates.map(x => cleanText(x, 10)).filter(x => /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(x)))].sort() : [];
+    const dateTimes = new Map((Array.isArray(body.dateTimes) ? body.dateTimes : []).filter(x => x && /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(String(x.date)) && typeof x.startsAt === "string").map(x => [x.date, x.startsAt]));
+    const time = String(body.time || "09:00");
     const notes = cleanText(body.notes, 1000);
-    if (!Number.isInteger(serviceId) || serviceId < 1 || Number.isNaN(startsAt.getTime()) || startsAt.getTime() < Date.now() + 300000) return sendError(res, 400, "Choose a service and a future date and time.");
-    const startSql = startsAt.toISOString().slice(0, 19).replace("T", " ");
+    const extraIds = Array.isArray(body.extraIds) ? [...new Set(body.extraIds.map(Number).filter(x => Number.isInteger(x) && x > 0))].slice(0, 20) : [];
+    if (!Number.isInteger(serviceId) || serviceId < 1 || !dates.length || dates.length > 31 || !/^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(time)) return sendError(res, 400, "Choose a service, a valid time, and between 1 and 31 booking dates.");
     const conn = await dbPool.getConnection();
+    let locks = [];
     try {
       await conn.beginTransaction();
-      const lockName = "booking-day:" + startSql.slice(0, 10);
-      const [lock] = await conn.execute("SELECT GET_LOCK(?,5) AS acquired", [lockName]);
-      if (!lock[0] || Number(lock[0].acquired) !== 1) { await conn.rollback(); return sendError(res, 409, "That time is busy. Please try another time."); }
-      const [services] = await conn.execute("SELECT id,name,duration_minutes FROM services WHERE id=? AND active=1 LIMIT 1", [serviceId]);
-      if (!services.length) { await conn.execute("SELECT RELEASE_LOCK(?)", [lockName]); await conn.rollback(); return sendError(res, 404, "That service is not available."); }
-      const endSql = new Date(startsAt.getTime() + Number(services[0].duration_minutes) * 60000).toISOString().slice(0, 19).replace("T", " ");
-      const [conflicts] = await conn.execute("SELECT b.id FROM bookings b JOIN services s ON s.id=b.service_id WHERE b.status IN ('requested','confirmed') AND b.starts_at < ? AND DATE_ADD(b.starts_at, INTERVAL s.duration_minutes MINUTE) > ? LIMIT 1", [endSql, startSql]);
-      if (conflicts.length) { await conn.execute("SELECT RELEASE_LOCK(?)", [lockName]); await conn.rollback(); return sendError(res, 409, "That time is already booked. Please choose another time."); }
-      const [result] = await conn.execute("INSERT INTO bookings (user_id,service_id,starts_at,notes) VALUES (?,?,?,?)", [session.user.id, serviceId, startSql, notes]);
-      await conn.execute("SELECT RELEASE_LOCK(?)", [lockName]);
+      const [services] = await conn.execute("SELECT id,name,duration_minutes,price,booking_mode,buffer_minutes,available_weekdays,start_time,end_time,min_notice_hours,max_advance_days FROM services WHERE id=? AND active=1 LIMIT 1", [serviceId]);
+      if (!services.length) { await conn.rollback(); return sendError(res, 404, "That service is not available."); }
+      const service = services[0];
+      let assignedResources=[];try{assignedResources=JSON.parse(service.resource_ids||"[]").map(Number)}catch(_){}
+      if(assignedResources.length&&(!resourceId||!assignedResources.includes(resourceId))){await conn.rollback();return sendError(res,400,"Choose an available agent or studio for this service.");}
+      if(resourceId&&!assignedResources.includes(resourceId)){await conn.rollback();return sendError(res,400,"That agent or studio is not assigned to this service.");}
+      const durationMinutes = Number(service.duration_minutes);
+      const earliest = Date.now() + Number(service.min_notice_hours || 0) * 3600000;
+      const latest = Date.now() + Number(service.max_advance_days || 365) * 86400000;
+      const addDays = (date, days) => new Date(Date.parse(date + "T00:00:00Z") + days * 86400000).toISOString().slice(0,10);
+      const durationDays = service.booking_mode === "daily" ? Math.max(1,Math.ceil(durationMinutes / 1440)) : 1;
+      const occurrences = dates.map(date => {
+        const startsAt = new Date(dateTimes.get(date) || (date + "T" + (service.booking_mode === "daily" ? "00:00" : time) + ":00Z"));
+        return { date, endDate: addDays(date,durationDays), time: service.booking_mode === "daily" ? "00:00" : time, startsAt };
+      });
+      if (occurrences.some(item => !Number.isFinite(item.startsAt.getTime()) || item.startsAt.getTime() < earliest || item.startsAt.getTime() > latest)) { await conn.rollback(); return sendError(res, 400, "Choose dates within this service’s booking window and notice period."); }
+      const weekdays = String(service.available_weekdays || "0,1,2,3,4,5,6").split(",").map(Number);
+      if (occurrences.some(item => !weekdays.includes(new Date(item.date + "T12:00:00Z").getUTCDay()))) { await conn.rollback(); return sendError(res, 400, "One or more selected dates are outside this service’s available days."); }
+      if (service.booking_mode !== "daily" && service.start_time && service.end_time) {
+        const open = String(service.start_time).slice(0,5), close = String(service.end_time).slice(0,5);
+        if (occurrences.some(item => item.time < open || item.time >= close || (Number(item.time.slice(0,2))*60 + Number(item.time.slice(3))) + durationMinutes > Number(close.slice(0,2))*60 + Number(close.slice(3)))) { await conn.rollback(); return sendError(res, 400, "Choose a time within the service’s working hours."); }
+      }
+      const lockDates=[...new Set(occurrences.flatMap(item=>Array.from({length:durationDays},(_,index)=>addDays(item.date,index))))];
+      const locksNeeded = lockDates.map(date => "booking-day:" + date).sort();
+      for (const lockName of locksNeeded) {
+        const [lock] = await conn.execute("SELECT GET_LOCK(?,5) AS acquired", [lockName]);
+        if (!lock[0] || Number(lock[0].acquired) !== 1) { await conn.rollback(); return sendError(res, 409, "One of those dates is busy. Please try again."); }
+        locks.push(lockName);
+      }
+      let extras = [];
+      if (extraIds.length) {
+        const marks = extraIds.map(() => "?").join(",");
+        const [found] = await conn.execute("SELECT id,name,price,duration_minutes,price_per_day FROM service_extras WHERE service_id=? AND active=1 AND id IN (" + marks + ")", [serviceId,...extraIds]);
+        if (found.length !== extraIds.length) { await conn.rollback(); return sendError(res, 400, "One or more selected extras are no longer available."); }
+        extras = found;
+      }
+      const extraDuration = extras.reduce((sum,x)=>sum+Number(x.duration_minutes||0),0);
+      const slotMinutes = durationMinutes + extraDuration + Number(service.buffer_minutes||0);
+      if(service.booking_mode!=="daily"&&service.start_time&&service.end_time){const close=String(service.end_time).slice(0,5),closeMinutes=Number(close.slice(0,2))*60+Number(close.slice(3));if(occurrences.some(item=>Number(item.time.slice(0,2))*60+Number(item.time.slice(3))+slotMinutes>closeMinutes)){await conn.rollback();return sendError(res,400,"The selected extras or buffer extend beyond the service closing time.");}}
+      const [existing] = await conn.execute("SELECT b.starts_at,b.resource_id,DATE_FORMAT(b.starts_at,'%Y-%m-%d') AS legacy_date,DATE_FORMAT(b.starts_at,'%H:%i') AS legacy_time,b.booking_dates_json,s.duration_minutes,s.booking_mode,s.buffer_minutes FROM bookings b JOIN services s ON s.id=b.service_id WHERE b.status IN ('requested','confirmed') AND b.starts_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 365 DAY) LIMIT 5000");
+      const conflicts = occurrences.some(candidate => existing.some(row => {
+        let saved; try { saved = row.booking_dates_json ? JSON.parse(row.booking_dates_json) : null; } catch (_) {}
+        if(resourceId&&row.resource_id&&Number(resourceId)!==Number(row.resource_id))return false;
+        const slots = Array.isArray(saved) && saved.length ? saved : [{date:row.legacy_date,time:row.legacy_time}];
+        return slots.some(slot => {
+          const rowDays = row.booking_mode === "daily" ? Math.max(1,Math.ceil(Number(row.duration_minutes||1440)/1440)) : 1;
+          const slotEnd = slot.endDate || addDays(slot.date,rowDays);
+          if (service.booking_mode === "daily" || row.booking_mode === "daily") return candidate.date < slotEnd && candidate.endDate > slot.date;
+          if (slot.date !== candidate.date) return false;
+          const currentStart = candidate.startsAt.getTime();
+          const bookedStart = slot.startsAt ? new Date(slot.startsAt).getTime() : new Date(slot.date + "T" + (slot.time || "00:00") + ":00").getTime();
+          const bookedDuration = Number(row.duration_minutes||60) + Number(row.buffer_minutes||0);
+          return currentStart < bookedStart + bookedDuration*60000 && currentStart + slotMinutes*60000 > bookedStart;
+        });
+      }));
+      if (conflicts) { await conn.rollback(); return sendError(res, 409, "One or more selected dates or times are already booked."); }
+      const bookingTotal = occurrences.reduce((sum, occurrence) => sum + Number(service.price || 0) + extras.reduce((extraSum, extra) => extraSum + Number(extra.price || 0) * (Number(extra.price_per_day) ? 1 : (occurrences.indexOf(occurrence) === 0 ? 1 : 0)), 0), 0);
+      const bookingDates = occurrences.map(item => ({date:item.date,endDate:item.endDate,time:item.time,startsAt:item.startsAt.toISOString()}));
+      const first = occurrences[0].startsAt.toISOString().slice(0,19).replace("T"," ");
+      const [result] = await conn.execute("INSERT INTO bookings (user_id,service_id,starts_at,notes,booking_dates_json,booking_extras_json,total_price,resource_id) VALUES (?,?,?,?,?,?,?,?)", [session.user.id,serviceId,first,notes,JSON.stringify(bookingDates),JSON.stringify(extras.map(x=>({id:x.id,name:x.name,price:Number(x.price),durationMinutes:Number(x.duration_minutes),pricePerDay:Boolean(Number(x.price_per_day))}))),bookingTotal.toFixed(2),resourceId]);
+      for (const lockName of locks) await conn.execute("SELECT RELEASE_LOCK(?)", [lockName]);
+      locks = [];
       await conn.commit();
       let emailSent = false;
-      if (process.env.SMTP_PASS) emailSent = await sendMail(session.user.email, "LuMekH appointment request received", "<p>Your appointment request for " + services[0].name + " has been received.</p>");
-      return sendJson(res, 201, { message: "Appointment request saved.", bookingId: result.insertId, emailSent });
+      if (process.env.SMTP_PASS) emailSent = await sendMail(session.user.email, "LuMekH booking request received", "<p>Your booking request for " + service.name + " covering " + bookingDates.map(x=>x.date).join(", ") + " has been received.</p><p>Estimated total: ₹" + bookingTotal.toFixed(2) + "</p>");
+      return sendJson(res, 201, { message: "Booking request saved for " + bookingDates.length + (bookingDates.length === 1 ? " date." : " dates.") + (emailSent ? " A confirmation email was sent." : ""), bookingId: result.insertId, totalPrice: bookingTotal, emailSent });
     } catch (error) {
       await conn.rollback();
       throw error;
-    } finally { conn.release(); }
+    } finally {
+      for (const lockName of locks) { try { await conn.execute("SELECT RELEASE_LOCK(?)", [lockName]); } catch (_) {} }
+      conn.release();
+    }
+  }
+
+  const cancelBookingMatch = route.match(new RegExp("^/api/bookings/([0-9]+)/cancel$"));
+  if (req.method === "POST" && cancelBookingMatch) {
+    const session=await requireSession(req,res);if(!session)return;
+    if(session.user.role!=="customer")return sendError(res,403,"Only customer accounts can cancel their own bookings.");
+    const [settingsRows]=await dbPool.query("SELECT setting_key,setting_value FROM booking_settings");
+    const settings=Object.fromEntries(settingsRows.map(row=>[row.setting_key,row.setting_value]));
+    if(settings.customer_can_cancel==="0")return sendError(res,403,"Online booking cancellation is disabled. Contact us for help.");
+    const id=Number(cancelBookingMatch[1]),[[booking]]=await dbPool.execute("SELECT id,status,starts_at FROM bookings WHERE id=? AND user_id=? LIMIT 1",[id,session.user.id]);
+    if(!booking)return sendError(res,404,"Booking not found.");
+    if(!["requested","confirmed"].includes(booking.status))return sendError(res,409,"This booking can no longer be cancelled online.");
+    const notice=Number(settings.cancellation_notice_hours||24)*3600000;
+    if(new Date(booking.starts_at).getTime()-Date.now()<notice)return sendError(res,400,"This booking is inside the cancellation notice window. Contact us for help.");
+    await dbPool.execute("UPDATE bookings SET status='cancelled' WHERE id=? AND user_id=?",[id,session.user.id]);
+    return sendJson(res,200,{message:"Booking cancelled."});
   }
 
   if (req.method === "POST" && route === "/api/orders") {
@@ -569,7 +672,7 @@ async function api(req, res, url) {
     if (!session) return sendError(res, 401, "Please sign in to view your account.");
     if (!dbReady) return sendError(res, 503, "Your account data is being prepared.");
     const [orders] = await dbPool.execute("SELECT id,total,status,payment_status,created_at FROM orders WHERE user_id=? ORDER BY created_at DESC LIMIT 100", [session.user.id]);
-    const [bookings] = await dbPool.execute("SELECT b.id,b.starts_at,b.status,b.notes,s.name AS service_name,s.duration_minutes FROM bookings b JOIN services s ON s.id=b.service_id WHERE b.user_id=? ORDER BY b.starts_at DESC LIMIT 100", [session.user.id]);
+    const [bookings] = await dbPool.execute("SELECT b.id,b.starts_at,b.booking_dates_json,b.booking_extras_json,b.total_price,b.status,b.notes,s.name AS service_name,s.duration_minutes,s.booking_mode,r.name AS resource_name,r.resource_type FROM bookings b JOIN services s ON s.id=b.service_id LEFT JOIN booking_resources r ON r.id=b.resource_id WHERE b.user_id=? ORDER BY b.starts_at DESC LIMIT 100", [session.user.id]);
     const [downloads] = await dbPool.execute("SELECT o.id AS order_id,p.id AS product_id,p.name AS product_name FROM orders o JOIN order_items oi ON oi.order_id=o.id JOIN products p ON p.id=oi.product_id WHERE o.user_id=? AND p.product_type='digital' AND (o.status='completed' OR o.payment_status='paid') ORDER BY o.created_at DESC", [session.user.id]);
     return sendJson(res, 200, { user: session.user, orders, bookings, downloads });
   }
@@ -687,22 +790,83 @@ async function api(req, res, url) {
       await dbPool.execute("UPDATE products SET active=? WHERE id=?",[body.active?1:0,id]);
       return sendJson(res,200,{message:body.active?"Product published.":"Product hidden."});
     }
+    if (req.method === "GET" && route === "/api/admin/resources") {
+      const [rows]=await dbPool.query("SELECT id,resource_type,name,email,location,timezone,active FROM booking_resources ORDER BY resource_type,name");
+      return sendJson(res,200,{resources:rows});
+    }
+    if (req.method === "POST" && route === "/api/admin/resources") {
+      const body=await readJson(req),type=body.type==="studio"?"studio":"agent",name=cleanText(body.name,160),email=cleanText(body.email,254),location=cleanText(body.location,500),timezone=cleanText(body.timezone,80)||"Asia/Kolkata";
+      if(name.length<2||(email&&!validEmail(email)))return sendError(res,400,"Enter a resource name and a valid optional email.");
+      const [result]=await dbPool.execute("INSERT INTO booking_resources (resource_type,name,email,location,timezone) VALUES (?,?,?,?,?)",[type,name,email,location,timezone]);
+      return sendJson(res,201,{id:result.insertId,message:"Agent or studio added."});
+    }
+    const resourceMatch=route.match(new RegExp("^/api/admin/resources/([0-9]+)$"));
+    if(req.method==="PATCH"&&resourceMatch) {
+      const body=await readJson(req);if(typeof body.active!=="boolean")return sendError(res,400,"Choose whether this resource is active.");
+      await dbPool.execute("UPDATE booking_resources SET active=? WHERE id=?",[body.active?1:0,Number(resourceMatch[1])]);return sendJson(res,200,{message:"Resource updated."});
+    }
+    if (req.method === "GET" && route === "/api/admin/service-categories") {
+      const [rows] = await dbPool.query("SELECT id,name,description,active FROM service_categories ORDER BY name");
+      return sendJson(res,200,{categories:rows});
+    }
+    if (req.method === "POST" && route === "/api/admin/service-categories") {
+      const body=await readJson(req),name=cleanText(body.name,120),description=cleanText(body.description,1000);
+      if(name.length<2)return sendError(res,400,"Enter a category name.");
+      try { const [result]=await dbPool.execute("INSERT INTO service_categories (name,description) VALUES (?,?)",[name,description]);return sendJson(res,201,{id:result.insertId,message:"Category added."}); }
+      catch(error) { if(error.code==="ER_DUP_ENTRY")return sendError(res,409,"That service category already exists.");throw error; }
+    }
+    if (req.method === "GET" && route === "/api/admin/service-extras") {
+      const [rows]=await dbPool.query("SELECT e.id,e.service_id,e.name,e.description,e.price,e.duration_minutes,e.price_per_day,e.active,s.name AS service_name FROM service_extras e JOIN services s ON s.id=e.service_id ORDER BY s.name,e.name");
+      return sendJson(res,200,{extras:rows});
+    }
+    if (req.method === "POST" && route === "/api/admin/service-extras") {
+      const body=await readJson(req),serviceId=Number(body.serviceId),name=cleanText(body.name,160),description=cleanText(body.description,1000),price=Number(body.price),duration=Number(body.durationMinutes||0);
+      if(!Number.isInteger(serviceId)||serviceId<1||name.length<2||!Number.isFinite(price)||price<0||!Number.isInteger(duration)||duration<0||duration>720)return sendError(res,400,"Enter a service, extra name, valid price, and duration.");
+      const [result]=await dbPool.execute("INSERT INTO service_extras (service_id,name,description,price,duration_minutes,price_per_day) SELECT ?,?,?,?,?,? FROM services WHERE id=?",[serviceId,name,description,price,duration,body.pricePerDay?1:0,serviceId]);
+      if(!result.affectedRows)return sendError(res,404,"That service was not found.");
+      return sendJson(res,201,{id:result.insertId,message:"Extra added."});
+    }
+    const extraMatch=route.match(new RegExp("^/api/admin/service-extras/([0-9]+)$"));
+    if(req.method==="PATCH"&&extraMatch) {
+      const body=await readJson(req);if(typeof body.active!=="boolean")return sendError(res,400,"Choose whether the extra is active.");
+      await dbPool.execute("UPDATE service_extras SET active=? WHERE id=?",[body.active?1:0,Number(extraMatch[1])]);return sendJson(res,200,{message:"Extra updated."});
+    }
+    if (req.method === "GET" && route === "/api/admin/booking-settings") {
+      const [rows]=await dbPool.query("SELECT setting_key,setting_value FROM booking_settings");
+      const settings=Object.fromEntries(rows.map(row=>[row.setting_key,row.setting_value]));
+      return sendJson(res,200,{settings:{timezone:settings.timezone||"Asia/Kolkata",slotIntervalMinutes:Number(settings.slot_interval_minutes||30),cancellationNoticeHours:Number(settings.cancellation_notice_hours||24),customerCanCancel:settings.customer_can_cancel!=="0",googleCalendarConnected:settings.google_calendar_connected==="1"}});
+    }
+    if (req.method === "PUT" && route === "/api/admin/booking-settings") {
+      const body=await readJson(req),timezone=cleanText(body.timezone,80),interval=Number(body.slotIntervalMinutes),notice=Number(body.cancellationNoticeHours);
+      if(!timezone||!Number.isInteger(interval)||interval<5||interval>240||!Number.isInteger(notice)||notice<0||notice>720||typeof body.customerCanCancel!=="boolean")return sendError(res,400,"Check the timezone, slot interval, and cancellation settings.");
+      for(const [key,value] of [["timezone",timezone],["slot_interval_minutes",String(interval)],["cancellation_notice_hours",String(notice)],["customer_can_cancel",body.customerCanCancel?"1":"0"]]) await dbPool.execute("INSERT INTO booking_settings (setting_key,setting_value) VALUES (?,?) ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value)",[key,value]);
+      return sendJson(res,200,{message:"Booking settings saved."});
+    }
     if (req.method === "GET" && route === "/api/admin/services") {
-      const [rows] = await dbPool.query("SELECT id,name,description,duration_minutes,price,active,created_at FROM services ORDER BY created_at DESC LIMIT 200");
+      const [rows] = await dbPool.query("SELECT s.id,s.name,s.description,s.duration_minutes,s.price,s.active,s.category_id,s.booking_mode,s.buffer_minutes,s.available_weekdays,s.start_time,s.end_time,s.min_notice_hours,s.max_advance_days,s.resource_ids,c.name AS category_name FROM services s LEFT JOIN service_categories c ON c.id=s.category_id ORDER BY s.created_at DESC LIMIT 200");
+      const [extras]=await dbPool.query("SELECT id,service_id,name,description,price,duration_minutes,price_per_day,active FROM service_extras ORDER BY service_id,name");
+      for(const row of rows){row.extras=extras.filter(extra=>Number(extra.service_id)===Number(row.id));try{row.resourceIds=JSON.parse(row.resource_ids||"[]")}catch(_){row.resourceIds=[]}}
       return sendJson(res, 200, { services: rows });
     }
-    if (req.method === "POST" && route === "/api/admin/services") {
-      const body = await readJson(req);
-      const name = cleanText(body.name, 160);
-      const description = cleanText(body.description, 3000);
-      const duration = Number(body.durationMinutes);
-      const price = Number(body.price);
-      if (name.length < 2 || !Number.isInteger(duration) || duration < 5 || duration > 720 || !Number.isFinite(price) || price < 0) return sendError(res, 400, "Enter a service name, duration from 5 to 720 minutes, and a valid price.");
-      await dbPool.execute("INSERT INTO services (name,description,duration_minutes,price) VALUES (?,?,?,?)", [name, description, duration, price]);
-      return sendJson(res, 201, { message: "Service added." });
+    const serviceEdit=route.match(new RegExp("^/api/admin/services/([0-9]+)$"));
+    if ((req.method==="POST" && route === "/api/admin/services") || (req.method==="PATCH" && serviceEdit)) {
+      const body=await readJson(req),id=serviceEdit?Number(serviceEdit[1]):null;
+      if(id&&typeof body.active==="boolean"&&!body.name){await dbPool.execute("UPDATE services SET active=? WHERE id=?",[body.active?1:0,id]);return sendJson(res,200,{message:body.active?"Service shown.":"Service hidden."});}
+      const name=cleanText(body.name,160),description=cleanText(body.description,3000),mode=body.bookingMode==="daily"?"daily":"hourly";
+      const duration=Number(body.durationMinutes),price=Number(body.price),categoryId=Number(body.categoryId)||null;
+      const resourceIds=Array.isArray(body.resourceIds)?[...new Set(body.resourceIds.map(Number).filter(x=>Number.isInteger(x)&&x>0))]:[];
+      const buffer=Number(body.bufferMinutes||0),weekdays=Array.isArray(body.availableWeekdays)?[...new Set(body.availableWeekdays.map(Number).filter(x=>Number.isInteger(x)&&x>=0&&x<=6))]:[0,1,2,3,4,5,6];
+      const open=String(body.startTime||""),close=String(body.endTime||""),minNotice=Number(body.minNoticeHours||0),maxAdvance=Number(body.maxAdvanceDays||365);
+      if(name.length<2||!Number.isInteger(duration)||duration<(mode==="daily"?1:5)||duration>(mode==="daily"?45:720)||!Number.isFinite(price)||price<0||!Number.isInteger(buffer)||buffer<0||buffer>720||!weekdays.length||!Number.isInteger(minNotice)||minNotice<0||minNotice>720||!Number.isInteger(maxAdvance)||maxAdvance<1||maxAdvance>730||((open||close)&&(!/^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(open)||!/^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(close)||open>=close)))return sendError(res,400,"Check the service details, duration, price, weekdays, and availability hours.");
+      if(categoryId){const [[found]]=await dbPool.execute("SELECT id FROM service_categories WHERE id=? AND active=1",[categoryId]);if(!found)return sendError(res,400,"Choose an available category.");}
+      if(resourceIds.length){const marks=resourceIds.map(()=>"?").join(",");const [found]=await dbPool.execute("SELECT id FROM booking_resources WHERE active=1 AND id IN ("+marks+")",resourceIds);if(found.length!==resourceIds.length)return sendError(res,400,"Choose available agents or studios.");}
+      const minutes=mode==="daily"?1440*duration:duration;
+      if(id){await dbPool.execute("UPDATE services SET name=?,description=?,duration_minutes=?,price=?,category_id=?,booking_mode=?,buffer_minutes=?,available_weekdays=?,start_time=?,end_time=?,min_notice_hours=?,max_advance_days=?,resource_ids=? WHERE id=?",[name,description,minutes,price,categoryId,mode,buffer,weekdays.join(","),open||null,close||null,minNotice,maxAdvance,JSON.stringify(resourceIds),id]);return sendJson(res,200,{message:"Service updated."});}
+      const [result]=await dbPool.execute("INSERT INTO services (name,description,duration_minutes,price,category_id,booking_mode,buffer_minutes,available_weekdays,start_time,end_time,min_notice_hours,max_advance_days,resource_ids) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",[name,description,minutes,price,categoryId,mode,buffer,weekdays.join(","),open||null,close||null,minNotice,maxAdvance,JSON.stringify(resourceIds)]);
+      return sendJson(res,201,{id:result.insertId,message:"Service added."});
     }
     if (req.method === "GET" && route === "/api/admin/bookings") {
-      const [rows] = await dbPool.query("SELECT b.id,b.starts_at,b.status,b.notes,b.created_at,u.name AS customer_name,u.email AS customer_email,s.name AS service_name,s.duration_minutes,s.price FROM bookings b JOIN app_users u ON u.id=b.user_id JOIN services s ON s.id=b.service_id ORDER BY b.starts_at DESC LIMIT 300");
+      const [rows] = await dbPool.query("SELECT b.id,b.starts_at,b.booking_dates_json,b.booking_extras_json,b.total_price,b.status,b.notes,b.created_at,u.name AS customer_name,u.email AS customer_email,s.name AS service_name,s.duration_minutes,s.booking_mode,s.price,r.name AS resource_name,r.resource_type FROM bookings b JOIN app_users u ON u.id=b.user_id JOIN services s ON s.id=b.service_id LEFT JOIN booking_resources r ON r.id=b.resource_id ORDER BY b.starts_at DESC LIMIT 300");
       return sendJson(res, 200, { bookings: rows });
     }
     if (req.method === "GET" && route === "/api/admin/orders") {
