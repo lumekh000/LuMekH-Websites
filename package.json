@@ -6,6 +6,6 @@
   "scripts": { "start": "node backend.js" },
   "dependencies": {
     "mysql2": "^3.15.3",
-    "nodemailer": "^7.0.10"
+    "nodemailer": "^10.4.1"
   }
 }
