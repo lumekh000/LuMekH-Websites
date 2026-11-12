@@ -487,3 +487,42 @@ html{scroll-behavior:smooth}
 .store-no-results{text-align:center;padding:30px 16px}
 @media(max-width:720px){.store-toolbar{grid-template-columns:1fr 1fr;padding:12px}.store-search{grid-column:1/-1}.header-cart{width:38px;height:38px;margin-left:2px}.site-menu{gap:2px!important}}
 @media(max-width:420px){.store-toolbar{grid-template-columns:1fr}.store-search{grid-column:auto}}
+
+/* Customer-facing Services catalogue */
+.services-page .pagehead{max-width:760px;padding-top:54px}
+.services-page .pagehead .gradient{background:none;color:#151519}
+.services-page .layout.booking-layout{grid-template-columns:minmax(0,1.35fr) minmax(350px,.8fr);gap:20px}
+.services-page .booking-layout>section{position:static}
+.service-catalog-panel,.booking-request-panel{border-radius:22px}
+.service-catalog-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:20px}
+.service-catalog-heading h2,.booking-request-panel h2{margin:4px 0 0}
+.service-result-count{font-size:12px;font-weight:700;color:#686971;border:1px solid #e5e5e9;background:#fff;border-radius:999px;padding:8px 12px}
+.services-filterbar{display:grid;grid-template-columns:minmax(0,1fr) minmax(160px,.42fr);gap:12px;padding:12px;background:#f8f8fa;border:1px solid #ececf0;border-radius:16px;margin-bottom:18px}
+.services-filterbar label{display:flex;flex-direction:column;gap:6px}
+.services-filterbar label>span{font-size:11px;font-weight:700;color:#66666e;padding-left:3px}
+.service-search{position:relative}
+.service-search>span{position:absolute;left:13px;top:50%;transform:translateY(-50%);font-size:21px;line-height:1;color:#71717a}
+.services-filterbar input,.services-filterbar select{width:100%;height:46px;padding:0 14px;border-radius:999px;border:1px solid #dedee3;background:#fff;color:#16161a;font:500 14px inherit;outline:none}
+.services-filterbar input{padding-left:40px}
+.services-filterbar input:focus,.services-filterbar select:focus{border-color:#17171b;box-shadow:0 0 0 3px rgba(20,20,24,.08)}
+.service-list-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.service-card{display:flex;flex-direction:column;justify-content:space-between;align-items:stretch;gap:10px;padding:18px;border:1px solid #e3e3e8;border-radius:18px;background:#fff;transition:transform .2s,border-color .2s,box-shadow .2s}
+.service-card:hover{transform:translateY(-3px);border-color:#eab5c4;box-shadow:0 14px 32px rgba(24,20,25,.07)}
+.service-card-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.service-card .tag{background:#f5f5f7;color:#585861;border:1px solid #e9e9ed}
+.service-kind{font-size:10px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:#73737c}
+.service-card h3{font-size:19px;margin:9px 0 0}
+.service-description{font-size:13px;line-height:1.55;margin:0;min-height:40px}
+.service-card-bottom{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin-top:6px}
+.service-card-bottom>div{display:grid;gap:5px}
+.service-price{font-size:17px;color:#111}
+.service-price small{font-size:11px;color:#666}
+.service-book-button{white-space:nowrap;transition:background .18s,color .18s,border-color .18s,transform .18s}
+.service-book-button:hover,.services-page .btn.primary:hover{background:#fff0f4;color:#17171b;border-color:#efc1ce;transform:translateY(-1px)}
+.service-book-button:active,.services-page .btn.primary:active{background:#e8f2ff;color:#111;border-color:#b7d3fb;transform:translateY(1px)}
+.service-empty-state{grid-column:1/-1;padding:24px;border:1px dashed #d9d9df;border-radius:16px;background:#fbfbfc;color:#66666e;text-align:center}
+.service-empty[hidden]{display:none}
+.booking-form-intro{font-size:13px;line-height:1.55;margin:9px 0 20px}
+.booking-request-panel{scroll-margin-top:24px}
+@media(max-width:1080px){.services-page .layout.booking-layout{grid-template-columns:minmax(0,1fr) minmax(320px,.78fr)}.service-list-grid{grid-template-columns:1fr}}
+@media(max-width:760px){.services-page .pagehead{padding-top:34px}.services-page .layout.booking-layout{grid-template-columns:1fr}.services-filterbar{grid-template-columns:1fr}.service-list-grid{grid-template-columns:1fr}.service-card-bottom{align-items:flex-start;flex-direction:column}.service-book-button{width:100%}}
