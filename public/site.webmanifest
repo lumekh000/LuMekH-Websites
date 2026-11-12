@@ -5,20 +5,14 @@
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#fffafd",
-  "theme_color": "#fff7fb",
+  "background_color": "#fff9ef",
+  "theme_color": "#fff9ef",
   "icons": [
     {
       "src": "/assets/lumekh-logo.png",
       "sizes": "120x120",
       "type": "image/png",
       "purpose": "any"
-    },
-    {
-      "src": "/assets/lumekh-app-icon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
     }
   ]
 }
