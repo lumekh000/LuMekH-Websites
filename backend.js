@@ -568,9 +568,10 @@ async function api(req, res, url) {
     const session = await getSession(req);
     if (!session) return sendError(res, 401, "Please sign in to view your account.");
     if (!dbReady) return sendError(res, 503, "Your account data is being prepared.");
-    const [orders] = await dbPool.execute("SELECT id,total,status,created_at FROM orders WHERE user_id=? ORDER BY created_at DESC LIMIT 100", [session.user.id]);
+    const [orders] = await dbPool.execute("SELECT id,total,status,payment_status,created_at FROM orders WHERE user_id=? ORDER BY created_at DESC LIMIT 100", [session.user.id]);
     const [bookings] = await dbPool.execute("SELECT b.id,b.starts_at,b.status,b.notes,s.name AS service_name,s.duration_minutes FROM bookings b JOIN services s ON s.id=b.service_id WHERE b.user_id=? ORDER BY b.starts_at DESC LIMIT 100", [session.user.id]);
-    return sendJson(res, 200, { user: session.user, orders, bookings });
+    const [downloads] = await dbPool.execute("SELECT o.id AS order_id,p.id AS product_id,p.name AS product_name FROM orders o JOIN order_items oi ON oi.order_id=o.id JOIN products p ON p.id=oi.product_id WHERE o.user_id=? AND p.product_type='digital' AND (o.status='completed' OR o.payment_status='paid') ORDER BY o.created_at DESC", [session.user.id]);
+    return sendJson(res, 200, { user: session.user, orders, bookings, downloads });
   }
 
   if (route.startsWith("/api/admin/")) {
