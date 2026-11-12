@@ -779,6 +779,19 @@ async function api(req, res, url) {
       return sendJson(res,200,{product,images,variants});
     }
     const productRoute = route.match(/^\/api\/admin\/products(?:\/(\d+))?$/);
+    if(req.method==="DELETE"&&productRoute&&productRoute[1]){
+      const id=Number(productRoute[1]),conn=await dbPool.getConnection();
+      try{
+        await conn.beginTransaction();
+        const [found]=await conn.execute("SELECT id FROM products WHERE id=? LIMIT 1",[id]);
+        if(!found.length){await conn.rollback();return sendError(res,404,"Product not found.");}
+        // Orders store item names and prices as snapshots, so removing this catalog entry keeps old order history intact.
+        await conn.execute("DELETE FROM stock_logs WHERE product_id=?",[id]);
+        await conn.execute("DELETE FROM products WHERE id=?",[id]);
+        await conn.commit();
+        return sendJson(res,200,{message:"Product deleted. Existing order history is preserved."});
+      }catch(error){await conn.rollback();throw error;}finally{conn.release();}
+    }
     if ((req.method==="POST"&&route==="/api/admin/products") || (req.method==="PATCH"&&productRoute&&productRoute[1])) {
       const body=await readJson(req);
       const id=productRoute&&productRoute[1]?Number(productRoute[1]):0;
@@ -911,6 +924,16 @@ async function api(req, res, url) {
       return sendJson(res, 200, { services: rows });
     }
     const serviceEdit=route.match(new RegExp("^/api/admin/services/([0-9]+)$"));
+    if(req.method==="DELETE"&&serviceEdit){
+      const id=Number(serviceEdit[1]);
+      const [[found]]=await dbPool.execute("SELECT id FROM services WHERE id=? LIMIT 1",[id]);
+      if(!found)return sendError(res,404,"Service not found.");
+      const [[usage]]=await dbPool.execute("SELECT COUNT(*) AS booking_count FROM bookings WHERE service_id=?",[id]);
+      if(Number(usage.booking_count)>0)return sendError(res,409,"This service has booking history. Hide it instead to preserve those bookings.");
+      try{await dbPool.execute("DELETE FROM services WHERE id=?",[id]);}
+      catch(error){if(error.code==="ER_ROW_IS_REFERENCED_2")return sendError(res,409,"This service has booking history. Hide it instead to preserve those bookings.");throw error;}
+      return sendJson(res,200,{message:"Service deleted."});
+    }
     if ((req.method==="POST" && route === "/api/admin/services") || (req.method==="PATCH" && serviceEdit)) {
       const body=await readJson(req),id=serviceEdit?Number(serviceEdit[1]):null;
       if(id&&typeof body.active==="boolean"&&!body.name){await dbPool.execute("UPDATE services SET active=? WHERE id=?",[body.active?1:0,id]);return sendJson(res,200,{message:body.active?"Service shown.":"Service hidden."});}
