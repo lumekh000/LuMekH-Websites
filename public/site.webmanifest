@@ -13,6 +13,12 @@
       "sizes": "120x120",
       "type": "image/png",
       "purpose": "any"
+    },
+    {
+      "src": "/assets/lumekh-app-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
     }
   ]
 }
