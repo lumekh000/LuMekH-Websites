@@ -354,3 +354,9 @@ nav{width:100%;justify-content:flex-start;gap:4px}
 .crm-module-card small{line-height:1.5}
 .booking-heading-actions{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:8px}
 @media(max-width:680px){.booking-page-heading{align-items:flex-start;flex-wrap:wrap}.booking-heading-actions{justify-content:flex-start;width:100%}}
+
+/* Services are the parent workflow for appointments */
+.crm-nav-service{width:100%;display:flex;align-items:center;justify-content:space-between;padding:13px 12px;border:1px solid transparent;border-radius:10px;color:#45454f;text-decoration:none;font-weight:600;font-size:13px;transition:.18s ease}
+.crm-nav-service:hover{background:#fff0f5;border-color:#f2cad9;color:#592b3a}
+.service-hub-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:18px;align-items:stretch}
+.service-hub-grid>.panel{min-height:270px}
