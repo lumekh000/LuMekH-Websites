@@ -28,7 +28,7 @@ function shell(){
  const nav=$('.topbar nav');
  if(nav&&!location.pathname.startsWith('/admin/')){
   const brand=$('.topbar .brand');
-  if(brand){brand.classList.add('site-brand');brand.innerHTML='<img class="brand-logo" src="/assets/lumekh-logo.png" alt=""><span class="brand-copy"><strong>LuMekH™</strong><small>CREATIVE SERVICES</small></span>'}
+  if(brand){brand.classList.add('site-brand');brand.innerHTML='<img class="brand-logo" src="/assets/lumekh-logo.png" alt=""><span class="brand-copy"><strong>LuMekH™</strong><small>Love We Make</small></span>'}
   nav.classList.add('site-menu');
   nav.innerHTML='<a class="navlink" href="/#services">Menu</a><a class="navlink" href="/appointments.html">Services</a><a class="navlink" href="/store.html">Store</a><a class="navlink" href="/account.html">My Account</a><a class="header-cart" href="/checkout.html" aria-label="Cart and checkout"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 8h14l-1 12H6L5 8Z"/><path d="M9 9V6a3 3 0 0 1 6 0v3"/></svg><span class="cart-badge" id="header-cart-count">0</span></a>';
   const path=location.pathname;
@@ -38,7 +38,7 @@ function shell(){
  }
  const footer=$('.footer');
  if(footer){
-  footer.innerHTML='<a class="brand site-brand footer-brand" href="/" aria-label="LuMekH home"><img class="brand-logo" src="/assets/lumekh-logo.png" alt=""><span class="brand-copy"><strong>LuMekH™</strong><small>CREATIVE SERVICES</small></span></a><div class="footer-actions"><button id="install-app" class="install-app-btn" type="button">Install LuMekH app</button><a class="admin-footer-link" href="/admin/login.html">Admin Login</a></div><p class="footer-copy">© 2026 LuMekH™. All rights reserved.</p>';
+  footer.innerHTML='<a class="brand site-brand footer-brand" href="/" aria-label="LuMekH home"><img class="brand-logo" src="/assets/lumekh-logo.png" alt=""><span class="brand-copy"><strong>LuMekH™</strong><small>Love We Make</small></span></a><div class="footer-actions"><button id="install-app" class="install-app-btn" type="button">Install LuMekH app</button><a class="admin-footer-link" href="/admin/login.html">Admin Login</a></div><p class="footer-copy">© 2026 LuMekH™. All rights reserved.</p>';
   const install=$('#install-app');
   install?.addEventListener('click',async()=>{
    if(deferredPwaPrompt){deferredPwaPrompt.prompt();await deferredPwaPrompt.userChoice;deferredPwaPrompt=null;return}
