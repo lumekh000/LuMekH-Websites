@@ -1,0 +1,9 @@
+{
+  "name": "lumekh-websites",
+  "version": "1.0.0",
+  "private": true,
+  "description": "LuMekH Websites home page",
+  "scripts": {
+    "start": "node server.js"
+  }
+}
