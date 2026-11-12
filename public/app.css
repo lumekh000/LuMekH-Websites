@@ -757,11 +757,11 @@ body:has(.topbar nav.site-menu)::before{display:block!important;content:"";heigh
 .site-menu .navlink.active,.site-menu .navlink[aria-current="page"]{background:#e85238!important;border-color:#e85238!important;color:#fff!important}
 .home-header{background:#111!important;border-color:#242424!important}
 .crm-topbar{background:#111!important}
-.footer{background:#fffefa!important;color:#756b62!important;border-color:#eee0cf!important;border-bottom:0!important;box-shadow:0 -8px 28px rgba(72,48,28,.045)!important}
-.footer-copy{border-color:#f0e6da!important;color:#756b62!important}
-.footer .brand-copy strong{color:#17191e!important}
-.footer .brand-copy small{color:#64646c!important}
-.footer .admin-footer-link{color:#8066c9!important}
+.footer{background:#111!important;color:#f8f4ef!important;border-color:#252321!important;border-bottom:0!important;box-shadow:0 -8px 25px rgba(0,0,0,.12)!important}
+.footer-copy{border-color:#34302c!important;color:#d0c9c2!important}
+.footer .brand-copy strong{color:#fff!important}
+.footer .brand-copy small{color:#cbc4bc!important}
+.footer .admin-footer-link{color:#d2baff!important}
 .footer .install-app-btn{background:#e85238!important;border-color:#e85238!important;color:#fff!important}
 .footer .install-app-btn:hover{background:#cf3e2c!important;color:#fff!important}
 .store-toolbar,.services-filterbar{display:flex!important;align-items:center!important;justify-content:flex-start!important;gap:10px!important;min-height:66px;padding:10px!important;border-radius:18px!important}
