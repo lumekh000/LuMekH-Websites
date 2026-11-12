@@ -552,3 +552,29 @@ body:has(.topbar nav.site-menu) .site-menu .header-cart{width:42px;height:42px;m
  body:has(.topbar nav.site-menu) .site-menu .header-cart{width:36px;height:36px;margin-left:3px}
  body:has(.topbar nav.site-menu) .site-menu .header-cart svg{width:17px;height:17px}
 }
+/* Dedicated product and service checkout */
+.checkout-grid{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(340px,.8fr);gap:20px;align-items:start;margin:0 0 56px}
+.checkout-summary-panel,.checkout-form{border-radius:22px}
+.checkout-panel-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
+.checkout-panel-heading h2{margin:4px 0}
+.checkout-items{display:grid;gap:0}
+.checkout-items .basket-line{padding:16px 0;border-bottom:1px solid var(--line)}
+.checkout-items .basket-line:first-child{border-top:1px solid var(--line)}
+.checkout-continue-link{margin-top:18px}
+.checkout-summary-panel .basket-total{display:flex;justify-content:space-between;align-items:center;padding:16px 0;margin:0;border-top:1px solid var(--line)}
+.checkout-service-card{padding:20px;border:1px solid #e5e5e9;border-radius:17px;background:#fafafd}
+.checkout-service-card h3{margin:14px 0 8px;font-size:22px}
+.checkout-service-card p{line-height:1.6}
+.checkout-service-card>div{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:14px}
+.checkout-service-card>div>strong{font-size:20px}
+.checkout-date-actions{display:grid;gap:14px;margin:6px 0 20px}
+.checkout-date-row{display:flex;gap:9px;align-items:center;margin-top:8px}
+.checkout-date-row input{flex:1;min-width:0}
+.checkout-form .range-add>div{display:grid;grid-template-columns:1fr 1fr auto;gap:8px}
+.checkout-form .range-add input{max-width:none}
+.checkout-form .range-add .btn{white-space:nowrap}
+.checkout-form #checkout-booking-fields{padding-bottom:10px;margin-bottom:20px;border-bottom:1px solid var(--line)}
+.checkout-form #checkout-booking-fields[hidden]{display:none}
+.checkout-summary-panel [hidden]{display:none!important}
+@media(max-width:850px){.checkout-grid{grid-template-columns:1fr}.checkout-summary-panel{order:0}.checkout-form{order:1}}
+@media(max-width:520px){.checkout-form .range-add>div{grid-template-columns:1fr 1fr}.checkout-form .range-add .btn{grid-column:1/-1}.checkout-date-row .btn{padding-inline:9px}}

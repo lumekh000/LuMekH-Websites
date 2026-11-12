@@ -63,6 +63,10 @@ async function initializeDatabase() {
       ["services","category_id","BIGINT UNSIGNED NULL"],
       ["services","resource_ids","TEXT NULL"],
       ["bookings","resource_id","BIGINT UNSIGNED NULL"],
+      ["bookings","customer_full_name","VARCHAR(160) NOT NULL DEFAULT ''"],
+      ["bookings","customer_phone","VARCHAR(40) NOT NULL DEFAULT ''"],
+      ["bookings","customer_address","VARCHAR(500) NOT NULL DEFAULT ''"],
+      ["bookings","customer_postal_code","VARCHAR(24) NOT NULL DEFAULT ''"],
       ["services","booking_mode","ENUM('hourly','daily') NOT NULL DEFAULT 'hourly'"],
       ["services","buffer_minutes","SMALLINT UNSIGNED NOT NULL DEFAULT 0"],
       ["services","available_weekdays","VARCHAR(40) NOT NULL DEFAULT '0,1,2,3,4,5,6'"],
@@ -511,8 +515,15 @@ async function api(req, res, url) {
     const dateTimes = new Map((Array.isArray(body.dateTimes) ? body.dateTimes : []).filter(x => x && /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(String(x.date)) && typeof x.startsAt === "string").map(x => [x.date, x.startsAt]));
     const time = String(body.time || "09:00");
     const notes = cleanText(body.notes, 1000);
+    const fullName = cleanText(body.fullName,160) || cleanText(session.user.name,120);
+    const phone = cleanText(body.phone,40);
+    const email = cleanText(body.email,254).toLowerCase();
+    const address = cleanText(body.address,500);
+    const postalCode = cleanText(body.postalCode,24);
     const extraIds = Array.isArray(body.extraIds) ? [...new Set(body.extraIds.map(Number).filter(x => Number.isInteger(x) && x > 0))].slice(0, 20) : [];
     if (!Number.isInteger(serviceId) || serviceId < 1 || !dates.length || dates.length > 31 || !/^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(time)) return sendError(res, 400, "Choose a service, a valid time, and between 1 and 31 booking dates.");
+    if (!validEmail(email) || email !== String(session.user.email || "").toLowerCase()) return sendError(res,400,"Enter the email address linked to your customer account.");
+    if (!fullName || !phone || !address || !postalCode) return sendError(res,400,"Complete your full name, mobile number, address, and PIN code.");
     const conn = await dbPool.getConnection();
     let locks = [];
     try {
@@ -576,7 +587,7 @@ async function api(req, res, url) {
       const bookingTotal = occurrences.reduce((sum, occurrence) => sum + Number(service.price || 0) + extras.reduce((extraSum, extra) => extraSum + Number(extra.price || 0) * (Number(extra.price_per_day) ? 1 : (occurrences.indexOf(occurrence) === 0 ? 1 : 0)), 0), 0);
       const bookingDates = occurrences.map(item => ({date:item.date,endDate:item.endDate,time:item.time,startsAt:item.startsAt.toISOString()}));
       const first = occurrences[0].startsAt.toISOString().slice(0,19).replace("T"," ");
-      const [result] = await conn.execute("INSERT INTO bookings (user_id,service_id,starts_at,notes,booking_dates_json,booking_extras_json,total_price,resource_id) VALUES (?,?,?,?,?,?,?,?)", [session.user.id,serviceId,first,notes,JSON.stringify(bookingDates),JSON.stringify(extras.map(x=>({id:x.id,name:x.name,price:Number(x.price),durationMinutes:Number(x.duration_minutes),pricePerDay:Boolean(Number(x.price_per_day))}))),bookingTotal.toFixed(2),resourceId]);
+      const [result] = await conn.execute("INSERT INTO bookings (user_id,service_id,starts_at,notes,booking_dates_json,booking_extras_json,total_price,resource_id,customer_full_name,customer_phone,customer_address,customer_postal_code) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", [session.user.id,serviceId,first,notes,JSON.stringify(bookingDates),JSON.stringify(extras.map(x=>({id:x.id,name:x.name,price:Number(x.price),durationMinutes:Number(x.duration_minutes),pricePerDay:Boolean(Number(x.price_per_day))}))),bookingTotal.toFixed(2),resourceId,fullName,phone,address,postalCode]);
       for (const lockName of locks) await conn.execute("SELECT RELEASE_LOCK(?)", [lockName]);
       locks = [];
       await conn.commit();
@@ -868,7 +879,7 @@ async function api(req, res, url) {
       return sendJson(res,201,{id:result.insertId,message:"Service added."});
     }
     if (req.method === "GET" && route === "/api/admin/bookings") {
-      const [rows] = await dbPool.query("SELECT b.id,b.starts_at,b.booking_dates_json,b.booking_extras_json,b.total_price,b.status,b.notes,b.created_at,u.name AS customer_name,u.email AS customer_email,s.name AS service_name,s.duration_minutes,s.booking_mode,s.price,r.name AS resource_name,r.resource_type FROM bookings b JOIN app_users u ON u.id=b.user_id JOIN services s ON s.id=b.service_id LEFT JOIN booking_resources r ON r.id=b.resource_id ORDER BY b.starts_at DESC LIMIT 300");
+      const [rows] = await dbPool.query("SELECT b.id,b.starts_at,b.booking_dates_json,b.booking_extras_json,b.total_price,b.status,b.notes,b.created_at,b.customer_full_name,b.customer_phone,b.customer_address,b.customer_postal_code,COALESCE(NULLIF(b.customer_full_name,''),u.name) AS customer_name,u.email AS customer_email,s.name AS service_name,s.duration_minutes,s.booking_mode,s.price,r.name AS resource_name,r.resource_type FROM bookings b JOIN app_users u ON u.id=b.user_id JOIN services s ON s.id=b.service_id LEFT JOIN booking_resources r ON r.id=b.resource_id ORDER BY b.starts_at DESC LIMIT 300");
       return sendJson(res, 200, { bookings: rows });
     }
     if (req.method === "GET" && route === "/api/admin/orders") {
