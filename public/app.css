@@ -905,3 +905,5 @@ body.product-editor-open:after,body.service-editor-open:after{content:"";positio
 .booking-extras-total{display:flex;justify-content:space-between;gap:12px;margin-top:10px;padding:11px 13px;border-radius:12px;background:#fff4ed;font-size:13px}
 .booking-extras-total:empty{display:none}
 @media(max-width:560px){.booking-extra-card{grid-template-columns:48px minmax(0,1fr);gap:9px;padding:10px}.booking-extra-image{width:48px;height:48px}.booking-extra-pricing{grid-column:2;justify-items:start;display:flex;align-items:center;gap:8px;flex-wrap:wrap}.resource-admin-actions{justify-content:flex-start}.resource-admin-image{width:48px;height:48px}}
+
+.admin-body .visibility-button.delete-product,.admin-body .btn.delete-service{color:#b42318;border-color:#f0b9b4;background:#fff8f7}.admin-body .visibility-button.delete-product:hover,.admin-body .btn.delete-service:hover{color:#8f1d16;border-color:#e5a39d;background:#fff0ee}
