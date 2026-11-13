@@ -66,6 +66,7 @@ async function initializeDatabase() {
       ["app_users","address","VARCHAR(500) NOT NULL DEFAULT ''"],
       ["app_users","city","VARCHAR(120) NOT NULL DEFAULT ''"],
       ["app_users","postal_code","VARCHAR(24) NOT NULL DEFAULT ''"],
+      ["app_users","is_deleted","TINYINT(1) NOT NULL DEFAULT 0"],
       ["services","category_id","BIGINT UNSIGNED NULL"],
       ["services","resource_ids","TEXT NULL"],
       ["bookings","resource_id","BIGINT UNSIGNED NULL"],
@@ -232,7 +233,7 @@ async function getSession(req) {
   if (!dbReady) return null;
   const token = parseCookies(req.headers.cookie).sid;
   if (!token || token.length > 200) return null;
-  const [rows] = await dbPool.execute("SELECT s.csrf_token,u.id,u.name,u.email,u.role,u.email_verified FROM app_sessions s JOIN app_users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at>UTC_TIMESTAMP() LIMIT 1", [hashToken(token)]);
+  const [rows] = await dbPool.execute("SELECT s.csrf_token,u.id,u.name,u.email,u.role,u.email_verified FROM app_sessions s JOIN app_users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at>UTC_TIMESTAMP() AND u.is_deleted=0 LIMIT 1", [hashToken(token)]);
   if (!rows.length) return null;
   return { csrfToken: rows[0].csrf_token, user: { id: rows[0].id, name: rows[0].name, email: rows[0].email, role: rows[0].role, emailVerified: Boolean(rows[0].email_verified) } };
 }
@@ -375,7 +376,7 @@ async function api(req, res, url) {
     const email = cleanText(body.email, 254).toLowerCase();
     const password = String(body.password || "");
     if (!validEmail(email) || password.length > 200) return sendError(res, 401, "Email or password is incorrect.");
-    const [rows] = await dbPool.execute("SELECT id,name,email,password_hash,role,email_verified FROM app_users WHERE email=? LIMIT 1", [email]);
+    const [rows] = await dbPool.execute("SELECT id,name,email,password_hash,role,email_verified FROM app_users WHERE email=? AND is_deleted=0 LIMIT 1", [email]);
     const validPassword=rows.length?await verifyPassword(password,rows[0].password_hash):false;
     if (!validPassword) {
       const failures=recordLoginFailure(req,email);
@@ -759,13 +760,53 @@ async function api(req, res, url) {
     if (req.method !== "GET" && !safeEqual(String(req.headers["x-csrf-token"] || ""), session.csrfToken)) return sendError(res, 403, "Please refresh the page and try again.");
 
     if (req.method === "GET" && route === "/api/admin/summary") {
-      const [rows] = await dbPool.query("SELECT (SELECT COUNT(*) FROM app_users WHERE role='customer') AS customers,(SELECT COUNT(*) FROM products WHERE active=1) AS products,(SELECT COUNT(*) FROM services WHERE active=1) AS services,(SELECT COUNT(*) FROM bookings WHERE status='requested') AS pending_bookings,(SELECT COUNT(*) FROM orders WHERE status='new') AS new_orders");
+      const [rows] = await dbPool.query("SELECT (SELECT COUNT(*) FROM app_users WHERE role='customer' AND is_deleted=0) AS customers,(SELECT COUNT(*) FROM products WHERE active=1) AS products,(SELECT COUNT(*) FROM services WHERE active=1) AS services,(SELECT COUNT(*) FROM bookings WHERE status='requested') AS pending_bookings,(SELECT COUNT(*) FROM orders WHERE status='new') AS new_orders");
       return sendJson(res, 200, rows[0]);
     }
     if (req.method === "GET" && route === "/api/admin/customers") {
       const q = "%" + cleanText(url.searchParams.get("q"), 80) + "%";
-      const [rows] = await dbPool.execute("SELECT id,name,email,created_at,email_verified FROM app_users WHERE role='customer' AND (name LIKE ? OR email LIKE ?) ORDER BY created_at DESC LIMIT 200", [q, q]);
+      const [rows] = await dbPool.execute("SELECT id,name,email,created_at,email_verified FROM app_users WHERE role='customer' AND is_deleted=0 AND (name LIKE ? OR email LIKE ?) ORDER BY created_at DESC LIMIT 200", [q, q]);
       return sendJson(res, 200, { customers: rows });
+    }
+    const customerMatch = route.match(/^\/api\/admin\/customers\/(\d+)$/);
+    if (customerMatch && req.method === "PATCH") {
+      const id = Number(customerMatch[1]);
+      const body = await readJson(req);
+      const email = cleanText(body.email, 254).toLowerCase();
+      if (!validEmail(email)) return sendError(res, 400, "Enter a valid customer email address.");
+      const [[customer]] = await dbPool.execute("SELECT id FROM app_users WHERE id=? AND role='customer' AND is_deleted=0 LIMIT 1", [id]);
+      if (!customer) return sendError(res, 404, "Customer not found.");
+      const [[duplicate]] = await dbPool.execute("SELECT id FROM app_users WHERE email=? AND id<>? LIMIT 1", [email, id]);
+      if (duplicate) return sendError(res, 409, "That email is already used by another account.");
+      const conn = await dbPool.getConnection();
+      try {
+        await conn.beginTransaction();
+        await conn.execute("UPDATE app_users SET email=?,email_verified=1 WHERE id=? AND role='customer' AND is_deleted=0", [email, id]);
+        await conn.execute("DELETE FROM app_sessions WHERE user_id=?", [id]);
+        await conn.execute("DELETE FROM email_tokens WHERE user_id=?", [id]);
+        await conn.commit();
+      } catch (error) { await conn.rollback(); if (error.code === "ER_DUP_ENTRY") return sendError(res, 409, "That email is already used by another account."); throw error; }
+      finally { conn.release(); }
+      return sendJson(res, 200, { message: "Customer email updated. Their existing orders and bookings remain linked to this account." });
+    }
+    if (customerMatch && req.method === "DELETE") {
+      const id = Number(customerMatch[1]);
+      const conn = await dbPool.getConnection();
+      try {
+        await conn.beginTransaction();
+        const [[customer]] = await conn.execute("SELECT id FROM app_users WHERE id=? AND role='customer' AND is_deleted=0 FOR UPDATE", [id]);
+        if (!customer) { await conn.rollback(); return sendError(res, 404, "Customer not found."); }
+        const deletedEmail = "deleted+" + id + "@deleted.invalid";
+        const passwordHash = await hashPassword(randomBytes(48).toString("base64url"));
+        await conn.execute("UPDATE app_users SET name='Deleted customer',email=?,password_hash=?,email_verified=0,phone='',address='',city='',postal_code='',is_deleted=1 WHERE id=? AND role='customer'", [deletedEmail, passwordHash, id]);
+        await conn.execute("DELETE FROM app_sessions WHERE user_id=?", [id]);
+        await conn.execute("DELETE FROM email_tokens WHERE user_id=?", [id]);
+        await conn.execute("DELETE FROM customer_addresses WHERE user_id=?", [id]);
+        await conn.execute("DELETE FROM wishlists WHERE user_id=?", [id]);
+        await conn.commit();
+      } catch (error) { await conn.rollback(); throw error; }
+      finally { conn.release(); }
+      return sendJson(res, 200, { message: "Customer account deleted. Historical orders and bookings were retained." });
     }
     const uploadMatch = route.match(/^\/api\/admin\/media$/);
     if (req.method === "POST" && uploadMatch) {
