@@ -981,3 +981,35 @@ header.topbar a.header-cart{color:#151515!important;background:#fff!important;bo
 header.topbar a.header-cart svg{stroke:#151515!important;stroke-width:2.25!important;fill:none!important;opacity:1!important;filter:none!important}
 header.topbar a.header-cart svg path{stroke:#151515!important;opacity:1!important}
 header.topbar a.header-cart:hover{color:#151515!important;background:#fff0f5!important;border-color:#f7bfd1!important}
+
+/* Store-style service listings: compact, colorful, image-led cards with accessible galleries. */
+.services-page .pagehead>.lead{display:none}.services-page .pagehead{margin-bottom:28px}.services-page .service-catalog-panel{padding:24px}
+.services-page .service-list-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,260px),1fr));gap:20px;align-items:stretch}
+.services-page .service-card{display:flex;flex-direction:column;justify-content:flex-start;align-items:stretch;gap:0;padding:0;overflow:hidden;border:2px solid #211e1b;border-radius:22px;background:#ffd2bd;box-shadow:7px 7px 0 #211e1b;transition:transform .2s ease,box-shadow .2s ease}
+.services-page .service-card:nth-child(5n+2){background:#dce9ff}.services-page .service-card:nth-child(5n+3){background:#ffe26e}.services-page .service-card:nth-child(5n+4){background:#d8ebca}.services-page .service-card:nth-child(5n+5){background:#f4d4e9}
+.services-page .service-card:hover{transform:translate(-2px,-3px);box-shadow:10px 11px 0 #211e1b}
+.services-page .service-card-media{position:relative;display:grid;place-items:center;width:100%;aspect-ratio:1/1;overflow:hidden;background:rgba(255,255,255,.26);border-bottom:2px solid #211e1b}
+.services-page .service-card-media img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .35s ease}.services-page .service-card-media img.is-active{opacity:1}
+.services-page .service-card-media-empty span{font-size:66px;filter:drop-shadow(2px 3px 0 rgba(30,20,20,.18))}
+.services-page .service-gallery-prev,.services-page .service-gallery-next{position:absolute;top:50%;transform:translateY(-50%);z-index:2;display:grid;place-items:center;width:34px;height:34px;border:1px solid rgba(0,0,0,.22);border-radius:50%;background:rgba(255,255,255,.92);color:#171717;font-size:23px;line-height:1;cursor:pointer}
+.services-page .service-gallery-prev{left:9px}.services-page .service-gallery-next{right:9px}.services-page .service-gallery-count{position:absolute;right:10px;bottom:10px;z-index:2;padding:4px 8px;border-radius:20px;background:rgba(17,17,17,.78);color:#fff;font-size:11px;font-weight:700}
+.services-page .service-card-copy{display:flex;flex:1;flex-direction:column;padding:17px}.services-page .service-card-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.services-page .service-card .tag{padding:5px 9px;border:1px solid rgba(0,0,0,.3);border-radius:20px;background:rgba(255,255,255,.55);color:#1b1817;font-size:10px;font-weight:800}
+.services-page .service-kind{color:#262321;font-size:9px;font-weight:850;letter-spacing:.11em}.services-page .service-card h3{margin:13px 0 5px;font-size:21px;line-height:1.15}
+.services-page .service-description{display:-webkit-box;overflow:hidden;margin:0 0 15px;color:#393430;font-size:13px;line-height:1.45;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.services-page .service-card-bottom{display:grid;gap:12px;margin-top:auto}.services-page .service-card-bottom>div{display:grid;gap:4px}.services-page .service-card-bottom small{color:#393430;font-size:11px}
+.services-page .service-price{color:#151515;font-size:17px}.services-page .service-price small{font-size:11px}.services-page .service-book-button{justify-content:center;min-height:42px;border:1.5px solid #1d1a18;background:#1d1a18;color:#fff;box-shadow:3px 3px 0 rgba(0,0,0,.22)}.services-page .service-book-button:hover{background:#302b28}
+.service-image-gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:12px;margin-top:12px}.service-image-item{position:relative;overflow:hidden;aspect-ratio:1;border:1px solid var(--line);border-radius:13px;background:#faf8f6}.service-image-item img{width:100%;height:100%;object-fit:cover}
+.service-image-item span{position:absolute;left:6px;bottom:6px;padding:3px 6px;border-radius:20px;background:rgba(15,15,15,.75);color:#fff;font-size:10px}.service-image-item button{position:absolute;top:5px;right:5px;width:25px;height:25px;border:0;border-radius:50%;background:#111;color:#fff;font-size:18px;cursor:pointer}
+.service-image-empty{grid-column:1/-1;margin:0;padding:13px;border:1px dashed var(--line);border-radius:12px}.service-admin-main{display:flex;align-items:center;gap:13px;min-width:0}
+.service-admin-thumb{width:64px;height:64px;flex:none;object-fit:cover;border:1px solid var(--line);border-radius:12px}.service-admin-thumb-empty{display:grid;place-items:center;background:#ffe1d2;color:#171717;font-weight:800;font-size:21px}
+@media(max-width:700px){.services-page .service-catalog-panel{padding:16px}.services-page .service-list-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.services-page .service-card{border-radius:17px;box-shadow:5px 5px 0 #211e1b}.services-page .service-card-copy{padding:12px}.services-page .service-card h3{font-size:17px}.services-page .service-description{font-size:12px}.services-page .service-card-media-empty span{font-size:48px}}
+@media(max-width:420px){.services-page .service-list-grid{grid-template-columns:1fr}.services-page .service-card-media{aspect-ratio:1.25/1}}
+
+/* Match product tiles to the paper-cut service cards while preserving their store controls. */
+.store-product-card{border:2px solid #211e1b!important;border-radius:20px!important;box-shadow:7px 7px 0 #211e1b!important;background:#ffd2bd!important}
+.store-product-card:nth-child(5n+2){background:#dce9ff!important}.store-product-card:nth-child(5n+3){background:#ffe26e!important}.store-product-card:nth-child(5n+4){background:#d8ebca!important}.store-product-card:nth-child(5n+5){background:#f4d4e9!important}
+.store-product-card:hover{transform:translate(-2px,-3px)!important;box-shadow:10px 11px 0 #211e1b!important}
+.store-product-media{border-bottom:2px solid #211e1b}
+.store-product-info .btn.primary{background:#1d1a18;color:#fff;border-color:#1d1a18}
+@media(max-width:700px){.store-product-card{box-shadow:5px 5px 0 #211e1b!important}}
