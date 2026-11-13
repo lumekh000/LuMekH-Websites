@@ -130,7 +130,7 @@ function setupMobileSiteHeader(){
     if(!panel){
       panel=document.createElement('div');
       panel.className='mobile-menu-panel';panel.id='mobile-site-menu';panel.hidden=true;
-      links.forEach(([label,href])=>{const a=document.createElement('a');a.href=href;a.textContent=label;panel.append(a)});
+      [['Services','/Services'],['Products','/Store'],['My Account','/My-Account']].forEach(([label,href])=>{const a=document.createElement('a');a.href=href;a.textContent=label;panel.append(a)});
       nav.append(panel);
     }
     if(!toggle.dataset.ready){
