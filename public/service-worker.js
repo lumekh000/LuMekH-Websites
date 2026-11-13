@@ -1,5 +1,5 @@
-const CACHE_NAME='lumekh-shell-v13';
-const APP_SHELL=['/','/app.css','/app.js','/site.webmanifest','/assets/lumekh-logo.png'];
+const CACHE_NAME='lumekh-shell-v14';
+const APP_SHELL=['/Home','/app.css','/app.js','/site.webmanifest','/assets/lumekh-logo.png'];
 self.addEventListener('install',event=>{event.waitUntil(caches.open(CACHE_NAME).then(cache=>cache.addAll(APP_SHELL)).then(()=>self.skipWaiting()))});
 self.addEventListener('activate',event=>{event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key!==CACHE_NAME).map(key=>caches.delete(key)))).then(()=>self.clients.claim()))});
 self.addEventListener('fetch',event=>{
