@@ -1045,3 +1045,9 @@ header.topbar a.header-cart:hover{color:#151515!important;background:#fff0f5!imp
 .store-filter select,.service-category select{width:100%!important;height:46px!important;min-height:46px!important;border-radius:14px!important}
 @media(max-width:900px){.store-toolbar{grid-template-columns:minmax(0,1fr) minmax(140px,1fr)!important}.store-toolbar .store-search{grid-column:1/-1!important}.services-filterbar{grid-template-columns:minmax(0,1fr) minmax(160px,.65fr)!important}}
 @media(max-width:600px){.store-toolbar,.services-filterbar{grid-template-columns:minmax(0,1fr)!important;gap:10px!important;padding:12px!important}.store-toolbar .store-search,.store-toolbar .store-filter,.services-filterbar .service-search,.services-filterbar .service-category{grid-column:1!important}.store-filter,.service-category{width:100%!important}.store-search.filter-search-panel,.service-search.filter-search-panel{height:46px!important}}
+
+/* Keep photo upload progress visible beside the service photo picker. */
+.service-upload-status{display:block;min-height:18px;margin-top:7px;font-size:12px;font-weight:600;color:#686a70}
+.service-upload-status[data-state="busy"]{color:#5546a6}
+.service-upload-status[data-state="success"]{color:#147347}
+.service-upload-status[data-state="error"]{color:#b3261e}
