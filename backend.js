@@ -567,9 +567,10 @@ async function api(req, res, url) {
     let locks = [];
     try {
       await conn.beginTransaction();
-      const [services] = await conn.execute("SELECT id,name,duration_minutes,price,booking_mode,buffer_minutes,available_weekdays,start_time,end_time,min_notice_hours,max_advance_days FROM services WHERE id=? AND active=1 LIMIT 1", [serviceId]);
+      const [services] = await conn.execute("SELECT id,name,duration_minutes,price,booking_mode,buffer_minutes,available_weekdays,start_time,end_time,min_notice_hours,max_advance_days,resource_ids FROM services WHERE id=? AND active=1 LIMIT 1", [serviceId]);
       if (!services.length) { await conn.rollback(); return sendError(res, 404, "That service is not available."); }
       const service = services[0];
+      if (service.booking_mode === "daily" && dates.length !== 1) { await conn.rollback(); return sendError(res, 400, "Choose one event start date per booking. The event end date is calculated from the service duration."); }
       let assignedResources=[];try{assignedResources=JSON.parse(service.resource_ids||"[]").map(Number)}catch(_){}
       if(assignedResources.length&&(!resourceId||!assignedResources.includes(resourceId))){await conn.rollback();return sendError(res,400,"Choose an available agent or studio for this service.");}
       if(resourceId&&!assignedResources.includes(resourceId)){await conn.rollback();return sendError(res,400,"That agent or studio is not assigned to this service.");}
