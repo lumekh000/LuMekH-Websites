@@ -1199,3 +1199,14 @@ header.topbar a.header-cart:hover{color:#151515!important;background:#fff0f5!imp
  .product-editor-form .editor-actions .btn{min-width:0;padding-inline:14px}
  .service-editor-form .service-hours{grid-template-columns:repeat(2,minmax(0,1fr))!important}
 }
+
+/* Final alignment pass: keep availability controls on a shared grid. */
+.service-editor-form .weekday-field .weekday-options{display:grid!important;grid-template-columns:repeat(7,minmax(0,1fr))!important;gap:6px!important}
+.service-editor-form .weekday-field .weekday-options label{display:flex!important;justify-content:center!important;min-width:0!important;min-height:38px!important;padding:5px 2px!important;border-radius:11px!important;gap:4px!important;font-size:10px!important;line-height:1!important;white-space:nowrap}
+.service-editor-form .weekday-field .weekday-options input[type=checkbox]{width:14px!important;height:14px!important;flex:0 0 14px!important;margin:0!important}
+.service-editor-form .service-hours{grid-template-columns:repeat(2,minmax(0,1fr))!important;align-items:start!important}
+.service-editor-form .service-hours .field{display:grid!important;grid-template-rows:18px 44px!important;align-content:start!important;align-items:start!important;gap:6px!important}
+.service-editor-form .service-hours .field>label{height:18px!important;line-height:18px!important;margin:0!important}
+.service-editor-form .service-hours input[type=time]{height:44px!important;min-height:44px!important;max-height:44px!important;padding-top:0!important;padding-bottom:0!important}
+@media(max-width:760px){.service-editor-form .weekday-field .weekday-options{grid-template-columns:repeat(4,minmax(0,1fr))!important}}
+@media(max-width:360px){.service-editor-form .weekday-field .weekday-options{grid-template-columns:repeat(3,minmax(0,1fr))!important}.service-editor-form .service-hours{grid-template-columns:minmax(0,1fr)!important}.service-editor-form .service-hours .field{grid-template-rows:18px 44px!important}}
