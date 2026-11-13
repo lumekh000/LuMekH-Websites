@@ -118,6 +118,8 @@ async function initializeDatabase() {
       ["order_items","variant_id","BIGINT UNSIGNED NULL"],
       ["order_items","sku","VARCHAR(64) NULL"],
       ["order_items","image_url","VARCHAR(1000) NULL"],
+      ["product_variants","sale_price","DECIMAL(10,2) NULL"],
+      ["product_variants","image_url","VARCHAR(1000) NULL"],
       ["order_items","line_total","DECIMAL(10,2) NOT NULL DEFAULT 0"]
     ]) {
       const [columns] = await dbPool.execute("SELECT COUNT(*) AS found FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=? AND COLUMN_NAME=?", [table,column]);
@@ -484,7 +486,7 @@ async function api(req, res, url) {
     const [[product]] = await dbPool.execute("SELECT p.id,p.name,p.description,p.price,p.sale_price,COALESCE(p.sale_price,p.price) AS current_price,p.stock,p.image_url,p.sku,p.featured,p.is_virtual,p.product_type,p.weight_grams,c.name AS category_name,(SELECT COUNT(*) FROM product_reviews r WHERE r.product_id=p.id AND r.status='approved') AS review_count,(SELECT ROUND(AVG(r.rating),1) FROM product_reviews r WHERE r.product_id=p.id AND r.status='approved') AS average_rating FROM products p LEFT JOIN product_categories c ON c.id=p.category_id WHERE p.id=? AND p.active=1 LIMIT 1",[id]);
     if (!product) return sendError(res,404,"Product not found.");
     const [images] = await dbPool.execute("SELECT id,image_url,alt_text FROM product_images WHERE product_id=? ORDER BY sort_order,id",[id]);
-    const [variants] = await dbPool.execute("SELECT id,sku,name,attributes_json,price,stock FROM product_variants WHERE product_id=? AND active=1 ORDER BY id",[id]);
+    const [variants] = await dbPool.execute("SELECT id,sku,name,attributes_json,price,sale_price,image_url,stock FROM product_variants WHERE product_id=? AND active=1 ORDER BY id",[id]);
     const [reviews] = await dbPool.execute("SELECT r.rating,r.title,r.body,r.created_at,u.name AS customer_name FROM product_reviews r JOIN app_users u ON u.id=r.user_id WHERE r.product_id=? AND r.status='approved' ORDER BY r.created_at DESC LIMIT 50",[id]);
     return sendJson(res,200,{product,images,variants,reviews});
   }
@@ -695,16 +697,16 @@ async function api(req, res, url) {
         if (type === "variable") {
           const variantId = Number(item.variantId);
           if (!Number.isInteger(variantId) || variantId < 1) { await conn.rollback(); return sendError(res, 400, "Choose a variation for " + product.name + "."); }
-          const [variants] = await conn.execute("SELECT id,name,sku,price,stock FROM product_variants WHERE id=? AND product_id=? AND active=1 LIMIT 1 FOR UPDATE", [variantId,productId]);
+          const [variants] = await conn.execute("SELECT id,name,sku,price,sale_price,image_url,stock FROM product_variants WHERE id=? AND product_id=? AND active=1 LIMIT 1 FOR UPDATE", [variantId,productId]);
           if (!variants.length) { await conn.rollback(); return sendError(res, 409, "That product option is no longer available."); }
           variant = variants[0];
         }
-        const unitPrice = variant && variant.price !== null ? Number(variant.price) : Number(product.sale_price !== null ? product.sale_price : product.price);
+        const unitPrice = variant ? Number(variant.sale_price !== null ? variant.sale_price : variant.price) : Number(product.sale_price !== null ? product.sale_price : product.price);
         const stock = variant && variant.stock !== null ? variant.stock : product.stock;
         if (stock !== null && Number(stock) < quantity) { await conn.rollback(); return sendError(res, 409, product.name + (variant ? " · " + variant.name : "") + " has limited stock. Update your basket and try again."); }
         if (type !== "digital") requiresShipping = true;
         total += unitPrice * quantity;
-        lines.push({id:product.id,name:product.name,displayName:product.name+(variant?" · "+variant.name:""),price:unitPrice,quantity,stock,type,variantId:variant?variant.id:null,sku:variant?variant.sku:product.sku,imageUrl:product.image_url});
+        lines.push({id:product.id,name:product.name,displayName:product.name+(variant?" · "+variant.name:""),price:unitPrice,quantity,stock,type,variantId:variant?variant.id:null,sku:variant?variant.sku:product.sku,imageUrl:variant?.image_url||product.image_url});
       }
       if (!fullName || !phone || !address || !postalCode) { await conn.rollback(); return sendError(res, 400, "Complete your full name, mobile number, address, and PIN code."); }
       const [order] = await conn.execute("INSERT INTO orders (user_id,total,full_name,phone,address,city,postal_code,subtotal) VALUES (?,?,?,?,?,?,?,?)", [session.user.id,total,fullName,phone,address,city,postalCode,total]);
@@ -850,7 +852,7 @@ async function api(req, res, url) {
       const [[product]]=await dbPool.execute("SELECT id,name,short_description,description,price,sale_price,stock,image_url,sku,active,featured,product_type,category_id,weight_grams,download_media_id FROM products WHERE id=? LIMIT 1",[id]);
       if(!product)return sendError(res,404,"Product not found.");
       const [images]=await dbPool.execute("SELECT id,image_url,alt_text FROM product_images WHERE product_id=? ORDER BY sort_order,id",[id]);
-      const [variants]=await dbPool.execute("SELECT id,sku,name,attributes_json,price,stock FROM product_variants WHERE product_id=? ORDER BY id",[id]);
+      const [variants]=await dbPool.execute("SELECT id,sku,name,attributes_json,price,sale_price,image_url,stock FROM product_variants WHERE product_id=? ORDER BY id",[id]);
       return sendJson(res,200,{product,images,variants});
     }
     const productRoute = route.match(/^\/api\/admin\/products(?:\/(\d+))?$/);
@@ -904,9 +906,9 @@ async function api(req, res, url) {
         await conn.execute("DELETE FROM product_variants WHERE product_id=?",[productId]);
         if(productType==="variable")for(const v of variants){
           const variantName=cleanText(v.name,160), variantSku=cleanText(v.sku,64)||null, attrs=typeof v.attributes==="object"&&v.attributes?v.attributes:{Options:cleanText(v.attributes,300)};
-          const variantPrice=v.price===""||v.price===null||v.price===undefined?null:Number(v.price), variantStock=v.stock===""||v.stock===null||v.stock===undefined?null:Number(v.stock);
-          if(!variantName||((variantPrice!==null)&&(!Number.isFinite(variantPrice)||variantPrice<0))||((variantStock!==null)&&(!Number.isInteger(variantStock)||variantStock<0)))throw Object.assign(new Error("Check each variation name, price, and stock."),{status:400});
-          await conn.execute("INSERT INTO product_variants (product_id,sku,name,attributes_json,price,stock) VALUES (?,?,?,?,?,?)",[productId,variantSku,variantName,JSON.stringify(attrs),variantPrice,variantStock]);
+          const variantPrice=v.price===""||v.price===null||v.price===undefined?null:Number(v.price), variantSale=v.salePrice===""||v.salePrice===null||v.salePrice===undefined?null:Number(v.salePrice), variantStock=v.stock===""||v.stock===null||v.stock===undefined?null:Number(v.stock), variantImage=cleanText(v.imageUrl,1000)||null;
+          if(!variantName||variantPrice===null||!Number.isFinite(variantPrice)||variantPrice<0||(variantSale!==null&&(!Number.isFinite(variantSale)||variantSale<0||variantSale>variantPrice))||((variantStock!==null)&&(!Number.isInteger(variantStock)||variantStock<0)))throw Object.assign(new Error("Check each variation name, regular and sale price, and stock."),{status:400});
+          await conn.execute("INSERT INTO product_variants (product_id,sku,name,attributes_json,price,sale_price,image_url,stock) VALUES (?,?,?,?,?,?,?,?)",[productId,variantSku,variantName,JSON.stringify(attrs),variantPrice,variantSale,variantImage,variantStock]);
         }
         await conn.commit();
         return sendJson(res,id?200:201,{id:productId,message:id?"Product updated.":"Product added."});
