@@ -1225,3 +1225,40 @@ header.topbar a.header-cart:hover{color:#151515!important;background:#fff0f5!imp
 .service-editor-form .service-hours input[type=time]{height:44px!important;min-height:44px!important;max-height:44px!important}
 .crm-service-form .field-row{align-items:start!important}
 @media(max-width:480px){.field-row>.field:not([hidden])>label:first-child{line-height:1.3!important;min-height:1.3em!important}}
+
+/* Modern day-event booking calendar */
+.checkout-page .checkout-grid{grid-template-columns:minmax(0,1fr) minmax(390px,.82fr);gap:22px;align-items:start}
+.checkout-page .checkout-summary-panel,.checkout-page .checkout-form{border:1px solid #eee1d3;border-radius:24px;background:#fff;box-shadow:0 16px 42px rgba(36,27,22,.055)}
+.checkout-page .checkout-form{padding:clamp(22px,3vw,34px)}
+.checkout-page #checkout-booking-fields>h2{margin:7px 0 18px;font-size:clamp(22px,2vw,28px)}
+.checkout-page #checkout-booking-mode:not(:empty){padding:10px 13px;border-radius:14px;background:#fff7ed;color:#675344;border:1px solid #f4e3d0;font-size:13px;margin:0 0 16px}
+.checkout-page #checkout-resource-field{margin:0 0 18px}
+.checkout-page #checkout-resource-field label{font-size:12px;color:#6b625d}
+.event-calendar{border:1px solid #eee1d3;border-radius:20px;background:linear-gradient(145deg,#fff 0%,#fffaf4 100%);padding:18px;margin:14px 0 20px;box-shadow:0 10px 28px rgba(54,39,25,.045)}
+.event-calendar[hidden]{display:none!important}
+.event-calendar-top{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px}
+.event-calendar-top>div:first-child{display:grid;gap:4px}
+.event-calendar-kicker{font-size:10px;font-weight:800;letter-spacing:.14em;color:#ef5139}
+.event-calendar-top strong{font-size:18px;letter-spacing:-.03em}
+.event-calendar-nav{display:flex;gap:8px}
+.event-calendar-nav button{width:38px;height:38px;border:1px solid #ebdfd3;border-radius:12px;background:#fff;color:#171717;font-size:24px;line-height:1;cursor:pointer;transition:background .18s,color .18s,transform .18s}
+.event-calendar-nav button:hover:not(:disabled){background:#171717;color:#fff;transform:translateY(-1px)}
+.event-calendar-nav button:disabled{opacity:.35;cursor:not-allowed}
+.event-calendar-weekdays,.event-calendar-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px}
+.event-calendar-weekdays{margin-bottom:7px}
+.event-calendar-weekdays span{text-align:center;font-size:10px;font-weight:700;color:#91877f;padding:6px 0}
+.event-calendar-day,.event-calendar-blank{min-width:0;aspect-ratio:1;display:grid;place-items:center;border-radius:12px}
+.event-calendar-day{border:1px solid transparent;background:transparent;color:#282320;font:inherit;font-size:13px;font-weight:600;cursor:pointer;transition:all .16s ease}
+.event-calendar-day:hover:not(:disabled){background:#fff0e9;border-color:#ffd4c5}
+.event-calendar-day.is-selected{background:#171717;color:#fff;border-color:#171717;box-shadow:0 5px 12px rgba(17,17,17,.17)}
+.event-calendar-day:disabled{color:#c9c1ba;cursor:not-allowed;text-decoration:line-through}
+.event-date-summary{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:12px;margin-top:17px;padding:14px;border-radius:15px;background:#fff;border:1px solid #efe5db}
+.event-date-summary>div{display:grid;gap:4px;min-width:0}
+.event-date-summary span{font-size:11px;color:#81776f}
+.event-date-summary strong{font-size:13px;color:#1c1a18;overflow-wrap:anywhere}
+.event-date-summary .event-date-arrow{color:#ed523a;font-size:18px}
+.checkout-page #checkout-date-list[hidden],.checkout-page .checkout-date-actions[hidden]{display:none!important}
+.checkout-page .checkout-form .field{margin:0 0 16px}
+.checkout-page .checkout-form #checkout-booking-fields{padding-bottom:14px;margin-bottom:22px}
+@media(max-width:850px){.checkout-page .checkout-grid{grid-template-columns:1fr}.checkout-page .checkout-summary-panel{order:0}.checkout-page .checkout-form{order:1}}
+@media(max-width:480px){.event-calendar{padding:13px;border-radius:17px}.event-calendar-weekdays,.event-calendar-grid{gap:3px}.event-calendar-day,.event-calendar-blank{border-radius:9px}.event-calendar-day{font-size:12px}.event-date-summary{padding:11px;gap:8px}.event-date-summary strong{font-size:12px}.checkout-page .checkout-form{padding:20px 16px}}
