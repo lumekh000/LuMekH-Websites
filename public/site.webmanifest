@@ -2,7 +2,7 @@
   "name": "LuMekH — Creative Services",
   "short_name": "LuMekH",
   "description": "Book creative services and shop LuMekH products.",
-  "start_url": "/",
+  "start_url": "/Home",
   "scope": "/",
   "display": "standalone",
   "background_color": "#fff9ef",
