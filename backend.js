@@ -1072,7 +1072,7 @@ const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, "http://localhost");
     if (url.pathname.startsWith("/api/")) return await api(req, res, url);
     if (req.method !== "GET" && req.method !== "HEAD") { res.writeHead(405, { Allow: "GET, HEAD" }); res.end("Method not allowed."); return; }
-    if (url.pathname.replace(/\\/+$/, "").toLowerCase() === "/lmh-admin") {
+    if (url.pathname.toLowerCase() === "/lmh-admin") {
       const current = await getSession(req);
       if (current?.user.role === "customer") {
         const token = parseCookies(req.headers.cookie).sid;
