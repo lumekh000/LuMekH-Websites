@@ -974,3 +974,10 @@ header.topbar nav a:not(.active),header.topbar .navlink{color:#f8f4ef!important}
  .creative-hero h1{font-size:clamp(30px,8.2vw,42px)!important;line-height:1.08!important;letter-spacing:-.052em!important;max-width:16ch!important;margin:14px 0 18px!important}
  .creative-lead{font-size:16px!important;line-height:1.55!important;max-width:36ch}
 }
+
+
+/* Keep the cart glyph dark and legible on its white circular button at every width. */
+header.topbar a.header-cart{color:#151515!important;background:#fff!important;border-color:#ded9d2!important;opacity:1!important}
+header.topbar a.header-cart svg{stroke:#151515!important;stroke-width:2.25!important;fill:none!important;opacity:1!important;filter:none!important}
+header.topbar a.header-cart svg path{stroke:#151515!important;opacity:1!important}
+header.topbar a.header-cart:hover{color:#151515!important;background:#fff0f5!important;border-color:#f7bfd1!important}
