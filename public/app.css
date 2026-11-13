@@ -954,3 +954,14 @@ header.topbar nav a:not(.active),header.topbar .navlink{color:#f8f4ef!important}
  .mobile-menu-panel a{display:flex;align-items:center;min-height:44px;padding:10px 13px;border-radius:12px;color:#fff;font-weight:700}
  .mobile-menu-panel a:hover,.mobile-menu-panel a:focus-visible{background:#292725;color:#fff}
 }
+
+
+/* Mobile header contrast and breakpoint safety. */
+@media(max-width:900px){
+ header.topbar nav.site-menu>a.navlink{display:none!important}
+ header.topbar .mobile-menu-toggle{display:grid!important;place-items:center!important;visibility:visible!important;opacity:1!important}
+ header.topbar nav.site-menu>.header-cart{display:inline-grid!important;visibility:visible!important;opacity:1!important;background:#fff!important;color:#111!important;border-color:#fff!important}
+ header.topbar nav.site-menu>.header-cart svg{stroke:#111!important;stroke-width:2.4!important;opacity:1!important;filter:none!important}
+ header.topbar .mobile-menu-toggle{background:#fff!important;border-color:#fff!important;color:#111!important}
+ header.topbar .mobile-menu-toggle svg{stroke:#111!important;stroke-width:2.2!important;opacity:1!important}
+}
