@@ -1051,3 +1051,86 @@ header.topbar a.header-cart:hover{color:#151515!important;background:#fff0f5!imp
 .service-upload-status[data-state="busy"]{color:#5546a6}
 .service-upload-status[data-state="success"]{color:#147347}
 .service-upload-status[data-state="error"]{color:#b3261e}
+
+/* Modern service editor refresh */
+.service-editor-open .service-admin-grid>.service-editor-form{width:min(1040px,calc(100vw - 40px))!important;max-height:min(92vh,980px)!important;overflow:auto!important;padding:0!important;border:1px solid #eadfd5!important;border-radius:26px!important;background:#fff!important;box-shadow:0 32px 100px rgba(25,19,16,.30)!important;scrollbar-width:thin}
+.service-editor-form{display:block!important}
+.service-editor-form[hidden]{display:none!important}
+.service-editor-head{position:sticky!important;top:0!important;z-index:10!important;display:flex!important;align-items:center!important;justify-content:space-between!important;margin:0!important;padding:18px 28px!important;border-bottom:1px solid #eee7e0!important;background:rgba(255,255,255,.96)!important;backdrop-filter:blur(14px)}
+.service-editor-head>div{display:grid;gap:2px}
+.service-editor-head .eyebrow{margin:0!important;font-size:10px!important;letter-spacing:.16em!important}
+.service-editor-caption{color:#77716d;font-size:12px;font-weight:600}
+.service-editor-close{width:38px!important;height:38px!important;flex-basis:38px!important;border-color:#ebe3db!important;background:#fff!important;font-size:20px!important}
+.service-editor-close:hover,.service-editor-close:focus-visible{background:#fff0ec!important;border-color:#f0a28e!important}
+.service-editor-title-row{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;padding:25px 30px 20px}
+.service-editor-title-row h2{margin:0!important;font-size:clamp(24px,3vw,32px)!important;letter-spacing:-.045em!important}
+.service-editor-subtitle{margin:5px 0 0;color:#79716e;font-size:13px}
+.service-editor-step{padding:7px 10px;border:1px solid #eee5dc;border-radius:999px;background:#fbf8f4;color:#77716d;font-size:9px;font-weight:800;letter-spacing:.12em;white-space:nowrap}
+.service-editor-form .service-editor-layout{display:grid;grid-template-columns:minmax(0,1.08fr) minmax(300px,.92fr);gap:14px;padding:0 30px 22px}
+.service-editor-section{min-width:0;padding:20px;border:1px solid #eee7e0;border-radius:19px;background:linear-gradient(145deg,#fff 0%,#fffdfa 100%)}
+.service-editor-details{grid-column:1;grid-row:1}
+.service-editor-photos{grid-column:2;grid-row:1}
+.service-editor-booking{grid-column:1;grid-row:2}
+.service-editor-availability{grid-column:2;grid-row:2}
+.service-section-heading{display:flex;align-items:center;gap:11px;margin-bottom:17px}
+.service-section-icon{display:grid;place-items:center;width:34px;height:34px;flex:0 0 34px;border-radius:11px;background:#fff0eb;color:#d94c34;font-size:11px;font-weight:800}
+.service-section-heading h3{margin:0;color:#1a1918;font:700 16px/1.25 Manrope,Arial,sans-serif;letter-spacing:-.025em}
+.service-section-heading p{margin:3px 0 0;color:#837c77;font-size:11px;line-height:1.4}
+.service-editor-form .field{display:grid;gap:7px;margin:0 0 14px}
+.service-editor-form .field:last-child{margin-bottom:0}
+.service-editor-form .field>label,.service-editor-form fieldset>legend{color:#383431;font-size:12px;font-weight:700}
+.service-editor-form input:not([type=checkbox]):not([type=file]),.service-editor-form select,.service-editor-form textarea{width:100%;min-height:44px;padding:10px 13px;border:1px solid #e8ddd2;border-radius:12px;background:#fff;color:#24211f;font:500 14px/1.4 'DM Sans',sans-serif;box-shadow:0 1px 2px rgba(32,23,17,.025);transition:border-color .18s ease,box-shadow .18s ease}
+.service-editor-form textarea{min-height:94px;resize:vertical}
+.service-editor-form input:focus,.service-editor-form select:focus,.service-editor-form textarea:focus{border-color:#ec8069!important;outline:0;box-shadow:0 0 0 3px rgba(235,93,66,.12)!important}
+.service-editor-form .field-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.service-editor-form .field-row .field{min-width:0}
+.service-editor-form .service-price-duration{align-items:start}
+.service-editor-form .muted{color:#807873;font-size:11px;line-height:1.55}
+.service-editor-form .service-file-input{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important}
+.service-upload-drop{display:flex;align-items:center;gap:12px;min-height:82px;padding:15px;border:1.5px dashed #e7cfc0;border-radius:16px;background:#fffaf6;cursor:pointer;transition:border-color .2s,background .2s,transform .2s}
+.service-upload-drop:hover,.service-file-input:focus-visible+.service-upload-drop{border-color:#e95b40;background:#fff3ed;transform:translateY(-1px)}
+.service-upload-symbol{display:grid;place-items:center;width:38px;height:38px;flex:0 0 38px;border-radius:12px;background:#171615;color:#fff;font-size:22px;font-weight:400}
+.service-upload-drop>span:nth-child(2){display:grid;gap:3px;min-width:0}
+.service-upload-drop strong{color:#24211f;font-size:13px}
+.service-upload-drop small{color:#817972;font-size:10px}
+.service-upload-size{margin-left:auto;padding:6px 8px;border-radius:8px;background:#f4eee8;color:#70675f;font-size:9px;font-weight:800;white-space:nowrap}
+.service-photo-help{display:block;margin-top:8px}
+.service-editor-form .service-image-gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:9px;margin-top:12px}
+.service-editor-form .service-image-gallery:empty{display:none}
+.service-editor-form .service-image-gallery>div,.service-editor-form .service-image-gallery>figure{max-width:92px}
+.service-editor-form fieldset{min-width:0;padding:13px;margin:0 0 14px;border:1px solid #eee5dc;border-radius:14px}
+.service-editor-form fieldset>legend{padding:0 5px}
+.service-editor-form .weekday-options{display:flex;flex-wrap:wrap;gap:7px}
+.service-editor-form .weekday-options label{display:inline-flex;align-items:center;gap:6px;min-height:34px;padding:6px 9px;border:1px solid #eee4dc;border-radius:999px;background:#fff;color:#4a4541;font-size:11px;font-weight:650}
+.service-editor-form .weekday-options input[type=checkbox]{accent-color:#ec5a3e}
+.service-editor-form .service-hours{margin-top:14px}
+.service-availability-note{margin:4px 0 0}
+.service-form-footer{position:sticky;bottom:0;z-index:8;display:flex;align-items:center;justify-content:space-between;gap:14px;padding:14px 30px;border-top:1px solid #eee7e0;background:rgba(255,255,255,.96);backdrop-filter:blur(14px)}
+.service-form-footer>div:first-child{min-width:0}
+.service-form-footer small{color:#827a75;font-size:10px}
+.service-form-footer .message{margin:0;font-size:12px}
+.service-form-actions{display:flex;align-items:center;justify-content:flex-end;gap:9px;margin:0!important}
+.service-form-actions .btn{min-height:42px;padding:0 17px;border-radius:12px;font-size:12px}
+.service-form-actions .btn.primary{box-shadow:0 7px 18px rgba(222,77,49,.18)}
+#service-upload-status{display:block;margin-top:8px}
+@media(max-width:760px){
+ .service-editor-open .service-admin-grid>.service-editor-form{width:calc(100vw - 20px)!important;max-height:calc(100dvh - 20px)!important;border-radius:20px!important}
+ .service-editor-head{padding:14px 16px!important}
+ .service-editor-title-row{align-items:flex-start;padding:19px 17px 15px}
+ .service-editor-step{display:none}
+ .service-editor-subtitle{max-width:38ch;font-size:12px}
+ .service-editor-form .service-editor-layout{grid-template-columns:minmax(0,1fr);gap:10px;padding:0 12px 14px}
+ .service-editor-details,.service-editor-photos,.service-editor-booking,.service-editor-availability{grid-column:1;grid-row:auto}
+ .service-editor-section{padding:15px;border-radius:16px}
+ .service-editor-form .field-row{gap:9px}
+ .service-form-footer{padding:12px 14px;align-items:flex-end}
+ .service-form-footer small{display:none}
+ .service-form-actions .btn{min-height:40px;padding:0 13px}
+}
+@media(max-width:430px){
+ .service-editor-form .field-row{grid-template-columns:minmax(0,1fr)}
+ .service-editor-form .service-price-duration{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .service-form-footer{gap:8px}
+ .service-form-actions{gap:6px}
+ .service-form-actions .btn{padding:0 10px;font-size:11px}
+}
