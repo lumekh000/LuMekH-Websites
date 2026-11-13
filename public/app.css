@@ -1051,6 +1051,16 @@ header.topbar a.header-cart:hover{color:#151515!important;background:#fff0f5!imp
 .services-page .service-search.filter-search-panel{display:flex!important;align-items:center!important;gap:12px!important;box-sizing:border-box!important;padding:0 16px!important;overflow:hidden!important}
 .services-page .service-search.filter-search-panel>span{display:grid!important;flex:0 0 20px!important;width:20px!important;height:20px!important;place-items:center!important;margin:0!important;color:#211e1b!important;font-size:21px!important;line-height:1!important}
 .services-page .service-search.filter-search-panel input{display:block!important;flex:1 1 0!important;width:0!important;min-width:0!important;max-width:none!important;box-sizing:border-box!important;margin:0!important;padding:0!important;line-height:normal!important;text-overflow:ellipsis!important}
+.shell>main{padding-bottom:28px}
+.brand-name-case{text-transform:none!important;letter-spacing:-.025em!important;font-weight:850}
+.store-catalog-panel{margin:0 0 4px;padding:24px;border:2px solid #211e1b;border-radius:26px;background:#fff;box-shadow:7px 7px 0 #211e1b}
+.store-catalog-panel .store-toolbar{margin:0 0 24px;border:2px solid #211e1b!important;border-radius:20px!important;background:#fff!important;box-shadow:5px 5px 0 #211e1b!important}
+.services-page .services-filterbar{border:2px solid #211e1b!important;box-shadow:5px 5px 0 #211e1b!important}
+.services-page .service-search.filter-search-panel>span{position:static!important;left:auto!important;top:auto!important;transform:none!important}
+.store-search.filter-search-panel input,.service-search.filter-search-panel input{color:#211e1b!important;font-family:Manrope,'DM Sans',sans-serif!important;font-size:14px!important;font-weight:600!important;letter-spacing:-.01em!important}
+.store-search.filter-search-panel input::placeholder,.service-search.filter-search-panel input::placeholder{color:#81776f!important;opacity:1!important}
+.store-catalog-panel .store-empty-state{margin:0;padding:22px;border:1.5px dashed #211e1b;border-radius:18px;background:#fff;color:#625950}
+@media(max-width:700px){.store-catalog-panel{padding:14px;border-radius:20px;box-shadow:5px 5px 0 #211e1b}.store-catalog-panel .store-toolbar{margin-bottom:18px;box-shadow:4px 4px 0 #211e1b!important}.services-page .services-filterbar{box-shadow:4px 4px 0 #211e1b!important}}
 
 /* Keep photo upload progress visible beside the service photo picker. */
 .service-upload-status{display:block;min-height:18px;margin-top:7px;font-size:12px;font-weight:600;color:#686a70}
