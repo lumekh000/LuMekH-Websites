@@ -1364,6 +1364,8 @@ header.topbar a.header-cart:hover{color:#151515!important;background:#fff0f5!imp
 .modern-select-option:hover,.modern-select-option:focus-visible{background:#f4f2ef!important;outline:none}
 .modern-select-option[aria-selected="true"]{background:#171717!important;color:#fff!important}
 @keyframes filter-menu-in{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
+.search-control:not(.is-open)>.search-input-panel{display:none!important}
+.search-control.is-open>.search-input-panel{display:flex!important}
 @media(max-width:600px){.modern-select-menu{max-height:40vh}.search-toggle-button{width:46px!important;height:46px!important;min-width:46px!important;flex-basis:46px!important}.modern-select-trigger{height:46px!important;min-height:46px!important}}
 .customer-account-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;margin-top:20px}
 .customer-history-panel{padding:clamp(20px,3vw,30px);min-width:0}
