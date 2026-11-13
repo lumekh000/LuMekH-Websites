@@ -1,7 +1,7 @@
 const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
-const { randomBytes, createHash, createCipheriv, createDecipheriv, scrypt, timingSafeEqual } = require("node:crypto");
+const { randomBytes, randomInt, createHash, createCipheriv, createDecipheriv, scrypt, timingSafeEqual } = require("node:crypto");
 const { promisify } = require("node:util");
 const mysql = require("mysql2/promise");
 const nodemailer = require("nodemailer");
@@ -317,16 +317,17 @@ async function api(req, res, url) {
     const password = String(body.password || "");
     if (name.length < 2 || !validEmail(email) || password.length < 10) return sendError(res, 400, "Enter your name, a valid email, and a password with at least 10 characters.");
     const passwordHash = await hashPassword(password);
-    const token = randomBytes(32).toString("hex");
+    const otp = String(randomInt(100000, 1000000));
     const conn = await dbPool.getConnection();
     try {
       await conn.beginTransaction();
       const [result] = await conn.execute("INSERT INTO app_users (name,email,password_hash) VALUES (?,?,?)", [name, email, passwordHash]);
-      await conn.execute("INSERT INTO email_tokens (token_hash,user_id,purpose,expires_at) VALUES (?,?,'verify',DATE_ADD(UTC_TIMESTAMP(), INTERVAL 1 DAY))", [hashToken(token), result.insertId]);
-      const link = originFor(req) + "/Verify?token=" + encodeURIComponent(token);
-      await sendMail(email, "Confirm your LuMekH account", "<p>Welcome to LuMekH.</p><p><a href=\"" + link + "\">Confirm your email address</a></p><p>This link expires in 24 hours.</p>");
+      await conn.execute("INSERT INTO email_tokens (token_hash,user_id,purpose,expires_at) VALUES (?,?,'verify',DATE_ADD(UTC_TIMESTAMP(), INTERVAL 10 MINUTE))", [hashToken(otp), result.insertId]);
+      const logo = originFor(req) + "/assets/lumekh-logo.png";
+      const html = "<div style='margin:0;background:#fff8ef;padding:36px 16px;font-family:Arial,sans-serif;color:#202027'><div style='max-width:520px;margin:auto;background:#fff;border:1px solid #f0dfcf;border-radius:22px;overflow:hidden'><div style='padding:24px 28px;background:#111;color:#fff'><img src='" + logo + "' alt='LuMekH' width='52' height='52' style='vertical-align:middle;margin-right:12px'><span style='display:inline-block;vertical-align:middle;font-size:22px;font-weight:700'>LuMekH™<small style='display:block;font-size:11px;letter-spacing:2px;color:#f6cbd9'>LOVE WE MAKE</small></span></div><div style='padding:32px 28px'><p style='color:#ef5038;font-size:12px;font-weight:bold;letter-spacing:2px'>WELCOME TO LUMEKH</p><h1 style='font-size:26px;margin:8px 0 12px'>Confirm your email</h1><p style='color:#666;line-height:1.6'>Enter this one-time code to finish creating your account.</p><div style='margin:24px 0;padding:18px;text-align:center;background:#fff4f7;border:1px solid #f5d3df;border-radius:14px;font-size:34px;font-weight:bold;letter-spacing:8px;color:#17171b'>" + otp + "</div><p style='color:#666;font-size:14px'>This code expires in 10 minutes. If you didn’t create a LuMekH account, you can ignore this email.</p></div><div style='padding:16px 28px;background:#faf8f6;color:#888;font-size:12px'>© 2026 LuMekH™ · Love We Make</div></div></div>";
+      await sendMail(email, "Your LuMekH verification code: " + otp, html);
       await conn.commit();
-      return sendJson(res, 201, { message: "Account created. Check your email to confirm your address." });
+      return sendJson(res, 201, { message: "Account created. Enter the 6-digit code sent to your email." });
     } catch (error) {
       await conn.rollback();
       if (error && error.code === "ER_DUP_ENTRY") return sendError(res, 409, "An account already exists for that email.");
@@ -337,8 +338,9 @@ async function api(req, res, url) {
   if (req.method === "POST" && route === "/api/auth/verify") {
     if (!dbReady) return sendError(res, 503, "Account setup is still being prepared.");
     const body = await readJson(req);
-    const token = String(body.token || "");
-    if (token.length < 32 || token.length > 200) return sendError(res, 400, "This confirmation link is not valid.");
+    const token = String(body.code || "");
+    if (!/^\\d{6}$/.test(token)) return sendError(res, 400, "Enter the 6-digit code sent to your email.");
+    if (!allowLogin(req, "verify-email-code")) return sendError(res, 429, "Too many code attempts. Please wait 15 minutes.");
     const conn = await dbPool.getConnection();
     try {
       await conn.beginTransaction();
