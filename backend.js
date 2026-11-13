@@ -1074,7 +1074,9 @@ async function serveStatic(res, pathname, search = "") {
       res.end(error.code === "ENOENT" ? "Page not found." : "Could not load this page.");
       return;
     }
-    res.writeHead(200, { "Content-Type": mimeTypes[path.extname(filePath)] || "application/octet-stream", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "strict-origin-when-cross-origin", "X-Frame-Options": "DENY" });
+    const staticExt = path.extname(filePath).toLowerCase();
+    const cacheHeaders = [".html", ".css", ".js"].includes(staticExt) ? { "Cache-Control": "no-cache" } : {};
+    res.writeHead(200, { "Content-Type": mimeTypes[staticExt] || "application/octet-stream", ...cacheHeaders, "X-Content-Type-Options": "nosniff", "Referrer-Policy": "strict-origin-when-cross-origin", "X-Frame-Options": "DENY" });
     res.end(data);
   });
 }
