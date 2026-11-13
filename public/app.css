@@ -1294,6 +1294,14 @@ header.topbar a.header-cart:hover{color:#151515!important;background:#fff0f5!imp
 .customer-profile-form small{display:block;margin-top:7px}
 .customer-profile-actions{grid-column:1/-1;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
 .customer-profile-actions .message{margin:0}
+.customer-profile-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px 22px;margin-top:28px;padding:22px;border:1px solid var(--line,#eadfd2);border-radius:20px;background:rgba(255,255,255,.72)}
+.customer-profile-summary-item{display:grid;gap:6px;min-width:0}
+.customer-profile-summary-item small{color:var(--muted,#746d69);font-size:12px}
+.customer-profile-summary-item strong{overflow-wrap:anywhere;font-size:15px;font-weight:650}
+.customer-profile-summary-address{grid-column:span 2}
+.customer-profile-edit{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:16px}
+.customer-profile-saved-label{color:var(--muted,#746d69);font-size:14px}
+[hidden]{display:none!important}
 .customer-account-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;margin-top:20px}
 .customer-history-panel{padding:clamp(20px,3vw,30px);min-width:0}
 .customer-section-heading{margin-bottom:18px}
@@ -1308,4 +1316,4 @@ header.topbar a.header-cart:hover{color:#151515!important;background:#fff0f5!imp
 .customer-downloads-panel{grid-column:1/-1}
 .customer-downloads-panel .customer-record{justify-content:flex-start}
 .customer-downloads-panel .customer-record .btn{margin-left:auto}
-@media(max-width:700px){.customer-profile-form,.customer-account-grid{grid-template-columns:1fr}.customer-profile-form .field:nth-child(2),.customer-profile-form .field:nth-child(4),.customer-profile-actions,.customer-downloads-panel{grid-column:auto}.customer-profile-heading{align-items:flex-start}.customer-record{align-items:flex-start}.customer-record-value{white-space:normal;text-align:right}.customer-profile-actions .btn{width:100%}}
+@media(max-width:700px){.customer-profile-form,.customer-account-grid{grid-template-columns:1fr}.customer-profile-form .field:nth-child(2),.customer-profile-form .field:nth-child(4),.customer-profile-actions,.customer-downloads-panel{grid-column:auto}.customer-profile-heading{align-items:flex-start}.customer-record{align-items:flex-start}.customer-record-value{white-space:normal;text-align:right}.customer-profile-actions .btn{width:100%}.customer-profile-summary{grid-template-columns:repeat(2,minmax(0,1fr));padding:18px}.customer-profile-summary-address{grid-column:1/-1}.customer-profile-edit{align-items:flex-start;flex-direction:column}.customer-profile-edit .btn{width:100%}}
