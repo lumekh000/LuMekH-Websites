@@ -1013,3 +1013,9 @@ header.topbar a.header-cart:hover{color:#151515!important;background:#fff0f5!imp
 .store-product-media{border-bottom:2px solid #211e1b}
 .store-product-info .btn.primary{background:#1d1a18;color:#fff;border-color:#1d1a18}
 @media(max-width:700px){.store-product-card{box-shadow:5px 5px 0 #211e1b!important}}
+
+/* Keep a compact close control visible while the service editor scrolls. */
+.service-editor-head{position:sticky;top:-1px;z-index:5;display:flex;align-items:center;justify-content:space-between;gap:12px;margin:-1px 0 12px;padding:1px 0 8px;background:#fff}
+.service-editor-head .eyebrow{margin:0}
+.service-editor-close{display:grid;place-items:center;flex:0 0 34px;width:34px;height:34px;padding:0;border:1px solid #ded9d2;border-radius:50%;background:#fff;color:#171717;font:500 22px/1 Manrope,Arial,sans-serif;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.08);transition:background .18s ease,border-color .18s ease,transform .18s ease}
+.service-editor-close:hover,.service-editor-close:focus-visible{background:#fff0f5;border-color:#f2b8cc;transform:scale(1.04);outline:2px solid transparent}
