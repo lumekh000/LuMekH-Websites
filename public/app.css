@@ -1411,3 +1411,13 @@ header.topbar a.header-cart:hover{color:#151515!important;background:#fff0f5!imp
 .customer-downloads-panel .customer-record{justify-content:flex-start}
 .customer-downloads-panel .customer-record .btn{margin-left:auto}
 @media(max-width:700px){.customer-profile-form,.customer-account-grid{grid-template-columns:1fr}.customer-profile-form .field:nth-child(2),.customer-profile-form .field:nth-child(4),.customer-profile-actions,.customer-downloads-panel{grid-column:auto}.customer-profile-heading{align-items:flex-start}.customer-record{align-items:flex-start}.customer-record-value{white-space:normal;text-align:right}.customer-profile-actions .btn{width:100%}.customer-profile-summary{grid-template-columns:repeat(2,minmax(0,1fr));padding:18px}.customer-profile-summary-address{grid-column:1/-1}.customer-profile-edit{align-items:flex-start;flex-direction:column}.customer-profile-edit .btn{width:100%}}
+
+/* Keep Store search and both filters on one aligned row until the mobile breakpoint. */
+.store-catalog-panel .store-toolbar{display:grid!important;grid-template-columns:48px minmax(150px,200px) minmax(150px,200px)!important;align-items:end!important;gap:14px!important}
+.store-catalog-panel .store-toolbar .search-control{grid-column:auto!important;width:48px!important;min-width:48px!important}
+.store-catalog-panel .store-toolbar .store-filter{grid-column:auto!important;width:100%!important;max-width:none!important;min-width:0!important}
+.store-catalog-panel .store-toolbar .modern-select{width:100%!important;min-width:0!important}
+.store-catalog-panel .store-toolbar:has(.store-search-control.is-open){grid-template-columns:minmax(0,1fr) minmax(140px,200px) minmax(140px,200px)!important}
+.store-catalog-panel .store-toolbar .store-search-control.is-open{grid-column:auto!important;width:100%!important;min-width:0!important}
+@media(max-width:900px) and (min-width:601px){.store-catalog-panel .store-toolbar{grid-template-columns:48px repeat(2,minmax(0,1fr))!important}.store-catalog-panel .store-toolbar:has(.store-search-control.is-open){grid-template-columns:minmax(0,1fr) repeat(2,minmax(135px,1fr))!important}}
+@media(max-width:600px){.store-catalog-panel .store-toolbar{grid-template-columns:minmax(0,1fr)!important}.store-catalog-panel .store-toolbar .search-control,.store-catalog-panel .store-toolbar .store-filter{grid-column:1!important}.store-catalog-panel .store-toolbar .search-control{width:48px!important}.store-catalog-panel .store-toolbar .search-control.is-open{width:min(100%,360px)!important}.store-catalog-panel .store-toolbar:has(.store-search-control.is-open){grid-template-columns:minmax(0,1fr)!important}}
