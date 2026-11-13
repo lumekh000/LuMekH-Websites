@@ -1262,3 +1262,8 @@ header.topbar a.header-cart:hover{color:#151515!important;background:#fff0f5!imp
 .checkout-page .checkout-form #checkout-booking-fields{padding-bottom:14px;margin-bottom:22px}
 @media(max-width:850px){.checkout-page .checkout-grid{grid-template-columns:1fr}.checkout-page .checkout-summary-panel{order:0}.checkout-page .checkout-form{order:1}}
 @media(max-width:480px){.event-calendar{padding:13px;border-radius:17px}.event-calendar-weekdays,.event-calendar-grid{gap:3px}.event-calendar-day,.event-calendar-blank{border-radius:9px}.event-calendar-day{font-size:12px}.event-date-summary{padding:11px;gap:8px}.event-date-summary strong{font-size:12px}.checkout-page .checkout-form{padding:20px 16px}}
+
+/* Calendar hover and selected states stay readable and distinct */
+.event-calendar-day:hover:not(:disabled){background:#ffece5!important;color:#211b18!important;border-color:#f3c3b4!important;box-shadow:0 3px 9px rgba(85,45,30,.10);transform:translateY(-1px)}
+.event-calendar-day.is-selected,.event-calendar-day.is-selected:hover:not(:disabled){background:#171717!important;color:#fff!important;border-color:#171717!important;box-shadow:0 5px 12px rgba(17,17,17,.17);transform:none}
+.event-calendar-day:focus-visible{outline:3px solid rgba(239,81,57,.3);outline-offset:2px}
