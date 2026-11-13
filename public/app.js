@@ -42,7 +42,7 @@ function shell(){
   const install=$('#install-app');
   install?.addEventListener('click',async()=>{
    if(deferredPwaPrompt){deferredPwaPrompt.prompt();await deferredPwaPrompt.userChoice;deferredPwaPrompt=null;return}
-   alert('To add LuMekH to your device, use your browser menu and choose “Install app” or “Add to Home Screen”.')
+   const ua=navigator.userAgent,isIOS=/iPhone|iPad|iPod/i.test(ua),isAndroid=/Android/i.test(ua);alert(isIOS?'To install LuMekH on iPhone: open this page in Safari, tap Share, choose Add to Home Screen, then tap Add.':isAndroid?'To install LuMekH on Android: open this page in Chrome, tap ⋮, then Install app or Add to Home screen.':'Use your browser menu and choose Install app or Add to Home Screen.')
   })
  }
 }
