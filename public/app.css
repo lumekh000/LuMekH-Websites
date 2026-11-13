@@ -965,3 +965,12 @@ header.topbar nav a:not(.active),header.topbar .navlink{color:#f8f4ef!important}
  header.topbar .mobile-menu-toggle{background:#fff!important;border-color:#fff!important;color:#111!important}
  header.topbar .mobile-menu-toggle svg{stroke:#111!important;stroke-width:2.2!important;opacity:1!important}
 }
+
+
+/* Balanced LuMekH home hero typography across desktop, tablet and mobile. */
+.creative-hero h1{font-size:clamp(40px,4.6vw,64px)!important;line-height:1.06!important;letter-spacing:-.055em!important;max-width:14ch!important;text-wrap:balance;overflow-wrap:normal}
+.creative-lead{font-size:clamp(16px,1.45vw,19px)!important;line-height:1.6!important;max-width:52ch}
+@media(max-width:720px){
+ .creative-hero h1{font-size:clamp(30px,8.2vw,42px)!important;line-height:1.08!important;letter-spacing:-.052em!important;max-width:16ch!important;margin:14px 0 18px!important}
+ .creative-lead{font-size:16px!important;line-height:1.55!important;max-width:36ch}
+}
