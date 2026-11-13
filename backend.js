@@ -63,12 +63,16 @@ async function initializeDatabase() {
     for (const sql of schema) await dbPool.query(sql);
     for (const [table,column,definition] of [
       ["app_users","phone","VARCHAR(40) NOT NULL DEFAULT ''"],
+      ["app_users","address","VARCHAR(500) NOT NULL DEFAULT ''"],
+      ["app_users","city","VARCHAR(120) NOT NULL DEFAULT ''"],
+      ["app_users","postal_code","VARCHAR(24) NOT NULL DEFAULT ''"],
       ["services","category_id","BIGINT UNSIGNED NULL"],
       ["services","resource_ids","TEXT NULL"],
       ["bookings","resource_id","BIGINT UNSIGNED NULL"],
       ["bookings","customer_full_name","VARCHAR(160) NOT NULL DEFAULT ''"],
       ["bookings","customer_phone","VARCHAR(40) NOT NULL DEFAULT ''"],
       ["bookings","customer_address","VARCHAR(500) NOT NULL DEFAULT ''"],
+      ["bookings","customer_city","VARCHAR(120) NOT NULL DEFAULT ''"],
       ["bookings","customer_postal_code","VARCHAR(24) NOT NULL DEFAULT ''"],
       ["services","booking_mode","ENUM('hourly','daily') NOT NULL DEFAULT 'hourly'"],
       ["services","buffer_minutes","SMALLINT UNSIGNED NOT NULL DEFAULT 0"],
@@ -556,6 +560,7 @@ async function api(req, res, url) {
     const phone = cleanText(body.phone,40);
     const email = cleanText(body.email,254).toLowerCase();
     const address = cleanText(body.address,500);
+    const city = cleanText(body.city,120);
     const postalCode = cleanText(body.postalCode,24);
     const requestedExtras = Array.isArray(body.extras) ? body.extras : (Array.isArray(body.extraIds) ? body.extraIds.map(id=>({id,quantity:1})) : []);
     const extraSelections = [...new Map(requestedExtras.map(x=>[Number(x?.id),{id:Number(x?.id),quantity:Number(x?.quantity||1)}]).filter(([id,x])=>Number.isInteger(id)&&id>0&&Number.isInteger(x.quantity)&&x.quantity>0).slice(0,20))].map(([id,x])=>x);
@@ -626,7 +631,8 @@ async function api(req, res, url) {
       const bookingTotal = occurrences.reduce((sum, occurrence,index) => sum + Number(service.price || 0) + extras.reduce((extraSum, extra) => extraSum + Number(extra.unitPrice||0) * Number(extra.quantity||1) * (Number(extra.price_per_day) ? durationDays : (index === 0 ? 1 : 0)), 0), 0);
       const bookingDates = occurrences.map(item => ({date:item.date,endDate:item.endDate,time:item.time,startsAt:item.startsAt.toISOString()}));
       const first = occurrences[0].startsAt.toISOString().slice(0,19).replace("T"," ");
-      const [result] = await conn.execute("INSERT INTO bookings (user_id,service_id,starts_at,notes,booking_dates_json,booking_extras_json,total_price,resource_id,customer_full_name,customer_phone,customer_address,customer_postal_code) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", [session.user.id,serviceId,first,notes,JSON.stringify(bookingDates),JSON.stringify(extras.map(x=>({id:x.id,name:x.name,price:Number(x.price),salePrice:x.sale_price===null?null:Number(x.sale_price),unitPrice:Number(x.unitPrice),quantity:Number(x.quantity),maxQuantity:Number(x.max_quantity),imageUrl:x.image_url||null,durationMinutes:0,pricePerDay:Boolean(Number(x.price_per_day))}))),bookingTotal.toFixed(2),resourceId,fullName,phone,address,postalCode]);
+      const [result] = await conn.execute("INSERT INTO bookings (user_id,service_id,starts_at,notes,booking_dates_json,booking_extras_json,total_price,resource_id,customer_full_name,customer_phone,customer_address,customer_city,customer_postal_code) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", [session.user.id,serviceId,first,notes,JSON.stringify(bookingDates),JSON.stringify(extras.map(x=>({id:x.id,name:x.name,price:Number(x.price),salePrice:x.sale_price===null?null:Number(x.sale_price),unitPrice:Number(x.unitPrice),quantity:Number(x.quantity),maxQuantity:Number(x.max_quantity),imageUrl:x.image_url||null,durationMinutes:0,pricePerDay:Boolean(Number(x.price_per_day))}))),bookingTotal.toFixed(2),resourceId,fullName,phone,address,city,postalCode]);
+      await conn.execute("UPDATE app_users SET name=?,phone=?,address=?,city=?,postal_code=? WHERE id=? AND role='customer'", [fullName,phone,address,city,postalCode,session.user.id]);
       for (const lockName of locks) await conn.execute("SELECT RELEASE_LOCK(?)", [lockName]);
       locks = [];
       await conn.commit();
@@ -701,6 +707,7 @@ async function api(req, res, url) {
       }
       if (!fullName || !phone || !address || !postalCode) { await conn.rollback(); return sendError(res, 400, "Complete your full name, mobile number, address, and PIN code."); }
       const [order] = await conn.execute("INSERT INTO orders (user_id,total,full_name,phone,address,city,postal_code,subtotal) VALUES (?,?,?,?,?,?,?,?)", [session.user.id,total,fullName,phone,address,city,postalCode,total]);
+      await conn.execute("UPDATE app_users SET name=?,phone=?,address=?,city=?,postal_code=? WHERE id=? AND role='customer'", [fullName,phone,address,city,postalCode,session.user.id]);
       for (const line of lines) {
         const lineTotal = line.price * line.quantity;
         await conn.execute("INSERT INTO order_items (order_id,product_id,product_name,quantity,unit_price,variant_id,sku,image_url,line_total) VALUES (?,?,?,?,?,?,?,?,?)", [order.insertId,line.id,line.displayName,line.quantity,line.price,line.variantId,line.sku,line.imageUrl,lineTotal]);
@@ -719,14 +726,29 @@ async function api(req, res, url) {
     } finally { conn.release(); }
   }
 
+  if (req.method === "PUT" && route === "/api/account/profile") {
+    const session = await requireSession(req, res, ["customer"]);
+    if (!session) return;
+    const body = await readJson(req);
+    const name = cleanText(body.name, 120);
+    const phone = cleanText(body.phone, 40);
+    const address = cleanText(body.address, 500);
+    const city = cleanText(body.city, 120);
+    const postalCode = cleanText(body.postalCode, 24);
+    if (!name) return sendError(res, 400, "Enter your full name.");
+    await dbPool.execute("UPDATE app_users SET name=?,phone=?,address=?,city=?,postal_code=? WHERE id=? AND role='customer'", [name,phone,address,city,postalCode,session.user.id]);
+    return sendJson(res, 200, { message: "Your profile has been saved.", user: { ...session.user, name, phone, address, city, postalCode } });
+  }
+
   if (req.method === "GET" && route === "/api/account") {
     const session = await getSession(req);
     if (!session) return sendError(res, 401, "Please sign in to view your account.");
     if (!dbReady) return sendError(res, 503, "Your account data is being prepared.");
+    const [[profile]] = await dbPool.execute("SELECT id,name,email,role,email_verified AS emailVerified,phone,address,city,postal_code AS postalCode FROM app_users WHERE id=? LIMIT 1", [session.user.id]);
     const [orders] = await dbPool.execute("SELECT id,total,status,payment_status,created_at FROM orders WHERE user_id=? ORDER BY created_at DESC LIMIT 100", [session.user.id]);
     const [bookings] = await dbPool.execute("SELECT b.id,b.starts_at,b.booking_dates_json,b.booking_extras_json,b.total_price,b.status,b.notes,s.name AS service_name,s.duration_minutes,s.booking_mode,r.name AS resource_name,r.resource_type FROM bookings b JOIN services s ON s.id=b.service_id LEFT JOIN booking_resources r ON r.id=b.resource_id WHERE b.user_id=? ORDER BY b.starts_at DESC LIMIT 100", [session.user.id]);
     const [downloads] = await dbPool.execute("SELECT o.id AS order_id,p.id AS product_id,p.name AS product_name FROM orders o JOIN order_items oi ON oi.order_id=o.id JOIN products p ON p.id=oi.product_id WHERE o.user_id=? AND p.product_type='digital' AND (o.status='completed' OR o.payment_status='paid') ORDER BY o.created_at DESC", [session.user.id]);
-    return sendJson(res, 200, { user: session.user, orders, bookings, downloads });
+    return sendJson(res, 200, { user: profile || session.user, orders, bookings, downloads });
   }
 
   if (route.startsWith("/api/admin/")) {
