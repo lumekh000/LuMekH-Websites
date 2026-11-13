@@ -323,7 +323,7 @@ async function api(req, res, url) {
       await conn.beginTransaction();
       const [result] = await conn.execute("INSERT INTO app_users (name,email,password_hash) VALUES (?,?,?)", [name, email, passwordHash]);
       await conn.execute("INSERT INTO email_tokens (token_hash,user_id,purpose,expires_at) VALUES (?,?,'verify',DATE_ADD(UTC_TIMESTAMP(), INTERVAL 1 DAY))", [hashToken(token), result.insertId]);
-      const link = originFor(req) + "/verify.html?token=" + encodeURIComponent(token);
+      const link = originFor(req) + "/Verify?token=" + encodeURIComponent(token);
       await sendMail(email, "Confirm your LuMekH account", "<p>Welcome to LuMekH.</p><p><a href=\"" + link + "\">Confirm your email address</a></p><p>This link expires in 24 hours.</p>");
       await conn.commit();
       return sendJson(res, 201, { message: "Account created. Check your email to confirm your address." });
@@ -394,7 +394,7 @@ async function api(req, res, url) {
     if (users.length) {
       const token = randomBytes(32).toString("hex");
       await dbPool.execute("INSERT INTO email_tokens (token_hash,user_id,purpose,expires_at) VALUES (?,?,'reset',DATE_ADD(UTC_TIMESTAMP(), INTERVAL 1 HOUR))", [hashToken(token), users[0].id]);
-      const link = originFor(req) + "/reset-password.html?token=" + encodeURIComponent(token);
+      const link = originFor(req) + "/Reset-Password?token=" + encodeURIComponent(token);
       await sendMail(email, "Reset your LuMekH password", "<p><a href=\"" + link + "\">Choose a new password</a></p><p>This link expires in one hour.</p>");
     }
     return sendJson(res, 200, { message: "If that account exists, a reset link has been sent." });
@@ -1000,10 +1000,59 @@ async function api(req, res, url) {
   return sendError(res, 404, "API route not found.");
 }
 
-async function serveStatic(res, pathname) {
+const cleanPageRoutes = Object.freeze({
+  "/home": { file: "index.html", path: "/Home" },
+  "/services": { file: "appointments.html", path: "/Services" },
+  "/store": { file: "store.html", path: "/Store" },
+  "/my-account": { file: "account.html", path: "/My-Account" },
+  "/checkout": { file: "checkout.html", path: "/Checkout" },
+  "/login": { file: "login.html", path: "/Login" },
+  "/register": { file: "register.html", path: "/Register" },
+  "/forgot-password": { file: "forgot-password.html", path: "/Forgot-Password" },
+  "/reset-password": { file: "reset-password.html", path: "/Reset-Password" },
+  "/verify": { file: "verify.html", path: "/Verify" },
+  "/admin/crm": { file: "admin/crm.html", path: "/Admin/CRM" },
+  "/admin/products": { file: "admin/products.html", path: "/Admin/Products" },
+  "/admin/services": { file: "admin/services.html", path: "/Admin/Services" },
+  "/admin/bookings": { file: "admin/bookings.html", path: "/Admin/Bookings" },
+  "/admin/login": { file: "admin/login.html", path: "/Admin/Login" }
+});
+const legacyPageRoutes = Object.freeze({
+  "/": "/Home",
+  "/index.html": "/Home",
+  "/appointments.html": "/Services",
+  "/store.html": "/Store",
+  "/account.html": "/My-Account",
+  "/checkout.html": "/Checkout",
+  "/login.html": "/Login",
+  "/register.html": "/Register",
+  "/forgot-password.html": "/Forgot-Password",
+  "/reset-password.html": "/Reset-Password",
+  "/verify.html": "/Verify",
+  "/admin/crm.html": "/Admin/CRM",
+  "/admin/products.html": "/Admin/Products",
+  "/admin/services.html": "/Admin/Services",
+  "/admin/bookings.html": "/Admin/Bookings",
+  "/admin/login.html": "/Admin/Login"
+});
+async function serveStatic(res, pathname, search = "") {
   let decoded;
   try { decoded = decodeURIComponent(pathname); } catch (_) { res.writeHead(400); res.end("Bad request"); return; }
-  const requested = decoded === "/" ? "index.html" : decoded.replace(/^\/+/, "");
+  const normalized = decoded.length > 1 ? decoded.replace(/\/+$/, "") : decoded;
+  const lookup = normalized.toLowerCase();
+  const legacy = legacyPageRoutes[lookup];
+  if (legacy) {
+    res.writeHead(301, { Location: legacy + search, "Cache-Control": "public, max-age=86400" });
+    res.end();
+    return;
+  }
+  const cleanPage = cleanPageRoutes[lookup];
+  if (cleanPage && decoded !== cleanPage.path) {
+    res.writeHead(301, { Location: cleanPage.path + search, "Cache-Control": "public, max-age=86400" });
+    res.end();
+    return;
+  }
+  const requested = cleanPage ? cleanPage.file : normalized.replace(/^\/+/, "");
   const filePath = path.resolve(publicDir, requested);
   if (!filePath.startsWith(publicDir + path.sep)) { res.writeHead(403); res.end("Forbidden"); return; }
   fs.readFile(filePath, (error, data) => {
@@ -1022,7 +1071,7 @@ const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, "http://localhost");
     if (url.pathname.startsWith("/api/")) return await api(req, res, url);
     if (req.method !== "GET" && req.method !== "HEAD") { res.writeHead(405, { Allow: "GET, HEAD" }); res.end("Method not allowed."); return; }
-    return serveStatic(res, url.pathname);
+    return serveStatic(res, url.pathname, url.search);
   } catch (error) {
     console.error("Request failed:", error.message);
     if (!res.headersSent) sendError(res, error.status || 500, error.status ? error.message : "Something went wrong. Please try again.");
