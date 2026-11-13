@@ -1421,3 +1421,9 @@ header.topbar a.header-cart:hover{color:#151515!important;background:#fff0f5!imp
 .store-catalog-panel .store-toolbar .store-search-control.is-open{grid-column:auto!important;width:100%!important;min-width:0!important}
 @media(max-width:900px) and (min-width:601px){.store-catalog-panel .store-toolbar{grid-template-columns:48px repeat(2,minmax(0,1fr))!important}.store-catalog-panel .store-toolbar:has(.store-search-control.is-open){grid-template-columns:minmax(0,1fr) repeat(2,minmax(135px,1fr))!important}}
 @media(max-width:600px){.store-catalog-panel .store-toolbar{grid-template-columns:minmax(0,1fr)!important}.store-catalog-panel .store-toolbar .search-control,.store-catalog-panel .store-toolbar .store-filter{grid-column:1!important}.store-catalog-panel .store-toolbar .search-control{width:48px!important}.store-catalog-panel .store-toolbar .search-control.is-open{width:min(100%,360px)!important}.store-catalog-panel .store-toolbar:has(.store-search-control.is-open){grid-template-columns:minmax(0,1fr)!important}}
+
+/* Center the admin sign-in card and give it the black paper-cut outline. */
+.admin-login-page .admin-login-main{width:min(100%,480px)!important;margin:0 auto!important;display:flex!important;flex:1 0 auto!important;flex-direction:column!important;justify-content:center!important;padding:clamp(32px,6vh,64px) 0!important}
+.admin-login-page .admin-login-main>.eyebrow,.admin-login-page .admin-login-main>h1{text-align:center!important}
+.admin-login-page .admin-login-main>.panel{width:100%!important;max-width:none!important;box-sizing:border-box!important;border:2px solid #211e1b!important;border-radius:24px!important;box-shadow:6px 6px 0 #211e1b!important}
+@media(max-width:600px){.admin-login-page .admin-login-main{width:100%!important;padding:34px 0!important}.admin-login-page .admin-login-main>.panel{padding:20px!important}}
