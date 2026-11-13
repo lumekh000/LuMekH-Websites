@@ -1025,11 +1025,11 @@ header.topbar a.header-cart:hover{color:#151515!important;background:#fff0f5!imp
 .services-page .service-card-media{position:absolute;top:12px;right:14px;z-index:2;display:block;width:48px;height:48px;aspect-ratio:auto;overflow:hidden;border:3px solid #211e1b;border-radius:50%;background:#fff;box-shadow:3px 4px 0 #211e1b}
 .services-page .service-card-media img,.home-service-gallery img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transform:translateX(7px) scale(.98);transition:opacity .55s ease,transform .55s ease}
 .services-page .service-card-media img.is-active,.home-service-gallery img.is-active{opacity:1;transform:translateX(0) scale(1)}
-.services-page .service-card-media-empty{display:grid;place-items:center;overflow:visible;width:auto;height:auto;border:0;border-radius:0;background:transparent;box-shadow:none;font-size:43px;line-height:1;filter:drop-shadow(2px 3px 0 rgba(33,30,28,.18))}
+.services-page .service-card-media-empty{display:grid;place-items:center;width:48px;height:48px;overflow:hidden;border:3px solid #211e1b;border-radius:50%;background:#fff;box-shadow:3px 4px 0 #211e1b;font-size:30px;line-height:1}.home-service-gallery-empty{display:grid;place-items:center}.home-service-gallery-empty .memory-emoji{position:static;font-size:29px;line-height:1;filter:none}
 .services-page .service-card-copy{padding-top:18px}
 .services-page .service-card-top{display:block;min-height:28px;padding-right:65px}
 .services-page .service-card .tag{display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:9px;letter-spacing:.09em;text-transform:uppercase}
 .home-service-gallery{position:absolute;top:12px;right:14px;display:block;width:48px;height:48px;overflow:hidden;border:3px solid #211e1b;border-radius:50%;background:#fff;box-shadow:3px 4px 0 #211e1b}
 .home-service-gallery img{border-radius:50%}
-@media(max-width:700px){.services-page .service-card-media,.home-service-gallery{top:11px;right:12px;width:46px;height:46px}.services-page .service-card-top{padding-right:57px}.services-page .service-card-media-empty{width:auto;height:auto}}
+@media(max-width:700px){.services-page .service-card-media,.home-service-gallery{top:11px;right:12px;width:46px;height:46px}.services-page .service-card-top{padding-right:57px}.services-page .service-card-media-empty{width:46px;height:46px}}
 @media(prefers-reduced-motion:reduce){.services-page .service-card-media img,.home-service-gallery img{transition:none!important}}
