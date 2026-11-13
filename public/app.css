@@ -919,3 +919,12 @@ body.product-editor-open:after,body.service-editor-open:after{content:"";positio
 
 /* Rounded black header for all account and recovery pages. */
 .auth-topbar{min-height:72px!important;margin-top:10px!important;padding:12px 22px!important;border:1px solid #292725!important;border-radius:22px!important;background:#111!important;color:#fff!important;box-shadow:0 8px 22px rgba(0,0,0,.16)!important}.auth-topbar .site-brand{color:#fff!important}.auth-topbar .brand-copy strong{color:#fff!important}.auth-topbar .brand-copy small{color:#d7d1cc!important}@media(max-width:720px){.auth-topbar{min-height:60px!important;margin-top:8px!important;padding:10px 14px!important;border-radius:18px!important}}
+
+
+/* Shared rounded black header, matched to the LuMekH footer card. */
+header.topbar,.admin-headerbar{margin-top:12px!important;padding:12px 22px!important;min-height:72px!important;border:1px solid #252321!important;border-radius:24px!important;background:#111!important;color:#f8f4ef!important;box-shadow:0 8px 25px rgba(0,0,0,.12)!important}
+header.topbar .brand,header.topbar .brand-copy strong,header.topbar .home-brand-type strong,.admin-headerbar strong,.admin-headerbar small,.admin-headerbar .admin-header-context{color:#f8f4ef!important}
+header.topbar .brand-copy small,header.topbar .home-brand-type small{color:#cbc4bc!important}
+header.topbar .brand-mark{border-color:#f8f4ef!important;color:#f8f4ef!important}
+header.topbar nav a:not(.active),header.topbar .navlink{color:#f8f4ef!important}
+@media(max-width:720px){header.topbar,.admin-headerbar{margin-top:8px!important;padding:12px 16px!important;min-height:60px!important;border-radius:20px!important}}
