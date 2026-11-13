@@ -1072,12 +1072,21 @@ const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, "http://localhost");
     if (url.pathname.startsWith("/api/")) return await api(req, res, url);
     if (req.method !== "GET" && req.method !== "HEAD") { res.writeHead(405, { Allow: "GET, HEAD" }); res.end("Method not allowed."); return; }
-    if (url.pathname.toLowerCase() === "/lmh-admin") {
+    const routePath = url.pathname.replace(/\/+$/, "").toLowerCase() || "/";
+    const wantsAdmin = routePath === "/lmh-admin" || routePath.startsWith("/admin/");
+    const wantsCustomer = ["/my-account", "/checkout", "/login", "/register", "/verify"].includes(routePath);
+    if (wantsAdmin || wantsCustomer) {
       const current = await getSession(req);
-      if (current?.user.role === "customer") {
+      const roleSwitch = current && ((wantsAdmin && current.user.role === "customer") || (wantsCustomer && current.user.role === "admin"));
+      if (roleSwitch) {
         const token = parseCookies(req.headers.cookie).sid;
         await dbPool.execute("DELETE FROM app_sessions WHERE token_hash=?", [hashToken(token)]);
         res.setHeader("Set-Cookie", "sid=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0");
+        if (wantsAdmin && routePath !== "/lmh-admin") {
+          res.writeHead(302, { Location: "/lmh-admin", "Cache-Control": "no-store" });
+          res.end();
+          return;
+        }
       }
     }
     return serveStatic(res, url.pathname, url.search);
