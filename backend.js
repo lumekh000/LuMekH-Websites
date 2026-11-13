@@ -1072,6 +1072,14 @@ const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, "http://localhost");
     if (url.pathname.startsWith("/api/")) return await api(req, res, url);
     if (req.method !== "GET" && req.method !== "HEAD") { res.writeHead(405, { Allow: "GET, HEAD" }); res.end("Method not allowed."); return; }
+    if (url.pathname.replace(/\\/+$/, "").toLowerCase() === "/lmh-admin") {
+      const current = await getSession(req);
+      if (current?.user.role === "customer") {
+        const token = parseCookies(req.headers.cookie).sid;
+        await dbPool.execute("DELETE FROM app_sessions WHERE token_hash=?", [hashToken(token)]);
+        res.setHeader("Set-Cookie", "sid=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0");
+      }
+    }
     return serveStatic(res, url.pathname, url.search);
   } catch (error) {
     console.error("Request failed:", error.message);
