@@ -244,14 +244,15 @@ async function publicSession(req, res) {
   sendJson(res, 200, { user: session ? session.user : null, csrfToken: session ? session.csrfToken : null, databaseReady: dbReady, emailReady: Boolean(process.env.SMTP_PASS) });
 }
 function attemptKey(req, email) { return (req.socket.remoteAddress || "unknown") + ":" + email; }
-function allowLogin(req, email) {
-  const key = attemptKey(req, email);
-  const now = Date.now();
-  const entry = loginAttempts.get(key);
-  if (!entry || now - entry.started > 15 * 60 * 1000) { loginAttempts.set(key, { started: now, count: 1 }); return true; }
-  if (entry.count >= 8) return false;
-  entry.count += 1;
-  return true;
+function loginFailureCount(req, email) {
+  const key=attemptKey(req,email),now=Date.now(),entry=loginAttempts.get(key);
+  if(!entry||now-entry.started>15*60*1000){loginAttempts.set(key,{started:now,count:0});return 0}
+  return entry.count;
+}
+function recordLoginFailure(req,email) {
+  const key=attemptKey(req,email),now=Date.now(),entry=loginAttempts.get(key);
+  if(!entry||now-entry.started>15*60*1000){loginAttempts.set(key,{started:now,count:1});return 1}
+  entry.count+=1;return entry.count;
 }
 function clearAttempts(req, email) { loginAttempts.delete(attemptKey(req, email)); }
 
@@ -369,9 +370,13 @@ async function api(req, res, url) {
     const body = await readJson(req);
     const email = cleanText(body.email, 254).toLowerCase();
     const password = String(body.password || "");
-    if (!validEmail(email) || password.length > 200 || !allowLogin(req, email)) return sendError(res, 429, "Too many sign-in attempts. Please wait 15 minutes and try again.");
+    if (!validEmail(email) || password.length > 200) return sendError(res, 401, "Email or password is incorrect.");
     const [rows] = await dbPool.execute("SELECT id,name,email,password_hash,role,email_verified FROM app_users WHERE email=? LIMIT 1", [email]);
-    if (!rows.length || !(await verifyPassword(password, rows[0].password_hash))) return sendError(res, 401, "Email or password is incorrect.");
+    const validPassword=rows.length?await verifyPassword(password,rows[0].password_hash):false;
+    if (!validPassword) {
+      const failures=recordLoginFailure(req,email);
+      return sendError(res,failures>=8?429:401,failures>=8?"Too many incorrect sign-in attempts. Try again later.":"Email or password is incorrect.");
+    }
     if (!rows[0].email_verified) return sendError(res, 403, "Confirm your email before signing in.");
     clearAttempts(req, email);
     const csrfToken = await createSession(res, rows[0].id);
