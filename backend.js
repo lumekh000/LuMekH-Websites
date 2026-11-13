@@ -277,7 +277,7 @@ async function api(req, res, url) {
 
   if (req.method === "GET" && route === "/api/google-calendar/callback") {
     const code=String(url.searchParams.get("code")||""),state=String(url.searchParams.get("state")||"");
-    const finish=(ok)=>{const target=originFor(req)+"/admin/services.html?view=resources&calendar="+(ok?"connected":"error");res.writeHead(302,{Location:target,"Cache-Control":"no-store"});return res.end()};
+    const finish=(ok)=>{const target=originFor(req)+"/Admin/Services?view=resources&calendar="+(ok?"connected":"error");res.writeHead(302,{Location:target,"Cache-Control":"no-store"});return res.end()};
     if(!code||!state||!process.env.GOOGLE_CLIENT_ID||!process.env.GOOGLE_CLIENT_SECRET)return finish(false);
     const [[entry]]=await dbPool.execute("SELECT resource_id,user_id FROM google_calendar_oauth_states WHERE state_hash=? AND expires_at>UTC_TIMESTAMP() LIMIT 1",[hashToken(state)]);
     await dbPool.execute("DELETE FROM google_calendar_oauth_states WHERE state_hash=?",[hashToken(state)]);if(!entry)return finish(false);
@@ -1015,7 +1015,7 @@ const cleanPageRoutes = Object.freeze({
   "/admin/products": { file: "admin/products.html", path: "/Admin/Products" },
   "/admin/services": { file: "admin/services.html", path: "/Admin/Services" },
   "/admin/bookings": { file: "admin/bookings.html", path: "/Admin/Bookings" },
-  "/admin/login": { file: "admin/login.html", path: "/Admin/Login" }
+  "/lmh-admin": { file: "admin/login.html", path: "/lmh-admin" }
 });
 const legacyPageRoutes = Object.freeze({
   "/": "/Home",
@@ -1033,7 +1033,8 @@ const legacyPageRoutes = Object.freeze({
   "/admin/products.html": "/Admin/Products",
   "/admin/services.html": "/Admin/Services",
   "/admin/bookings.html": "/Admin/Bookings",
-  "/admin/login.html": "/Admin/Login"
+  "/admin/login": "/lmh-admin",
+  "/admin/login.html": "/lmh-admin"
 });
 async function serveStatic(res, pathname, search = "") {
   let decoded;
