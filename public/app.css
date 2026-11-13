@@ -1210,3 +1210,18 @@ header.topbar a.header-cart:hover{color:#151515!important;background:#fff0f5!imp
 .service-editor-form .service-hours input[type=time]{height:44px!important;min-height:44px!important;max-height:44px!important;padding-top:0!important;padding-bottom:0!important}
 @media(max-width:760px){.service-editor-form .weekday-field .weekday-options{grid-template-columns:repeat(4,minmax(0,1fr))!important}}
 @media(max-width:360px){.service-editor-form .weekday-field .weekday-options{grid-template-columns:repeat(3,minmax(0,1fr))!important}.service-editor-form .service-hours{grid-template-columns:minmax(0,1fr)!important}.service-editor-form .service-hours .field{grid-template-rows:18px 44px!important}}
+
+/* Site-wide form alignment: every paired field shares the same label and control rows. */
+.field-row{align-items:start!important}
+.field-row>.field:not([hidden]){display:grid!important;grid-template-rows:minmax(18px,auto) 44px!important;align-content:stretch!important;align-self:stretch!important;min-width:0}
+.field-row>.field:not([hidden])>label:first-child{display:block!important;min-height:18px!important;margin:0!important;line-height:18px!important}
+.field-row>.field:not([hidden])>input:not([type=checkbox]):not([type=radio]):not([type=file]),.field-row>.field:not([hidden])>select{width:100%!important;height:44px!important;min-height:44px!important;max-height:44px!important;min-width:0}
+.field-row>.field:not([hidden])>textarea{min-height:88px}
+.product-editor-form .field-row{align-items:start!important}
+.service-editor-form .field-row{align-items:start!important}
+.service-editor-form .service-hours{align-items:start!important}
+.service-editor-form .service-hours .field{grid-template-rows:minmax(18px,auto) 44px!important;align-content:stretch!important;align-items:stretch!important}
+.service-editor-form .service-hours .field>label:first-child{height:auto!important;min-height:18px!important;line-height:18px!important}
+.service-editor-form .service-hours input[type=time]{height:44px!important;min-height:44px!important;max-height:44px!important}
+.crm-service-form .field-row{align-items:start!important}
+@media(max-width:480px){.field-row>.field:not([hidden])>label:first-child{line-height:1.3!important;min-height:1.3em!important}}
