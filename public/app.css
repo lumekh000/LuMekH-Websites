@@ -1438,3 +1438,5 @@ header.topbar a.header-cart:hover{color:#151515!important;background:#fff0f5!imp
 
 /* Give site action buttons a consistent black outline. */
 .btn{border:1.5px solid #171717!important}
+#home-product-grid{margin-top:30px}
+@media(max-width:720px){#home-product-grid{margin-top:22px}}
