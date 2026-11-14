@@ -1953,3 +1953,7 @@ header.topbar a.header-cart:hover{color:#151515!important;background:#fff0f5!imp
 .status-menu.status-menu-portal{position:fixed!important;z-index:10000;display:grid;min-width:176px;gap:4px;padding:7px;border:1px solid #ded9d2;border-radius:15px;background:#fff;box-shadow:0 18px 42px rgba(17,19,24,.2);overflow:auto;overscroll-behavior:contain}
 .status-menu.status-menu-portal[hidden]{display:none!important}
 @media(max-width:1050px){.admin-content .crm-stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+
+/* Keep the invoice dialog close control visible and separated from its download action. */
+.order-detail-dialog{overflow:auto;overscroll-behavior:contain}.order-detail-head{position:sticky;top:-28px;z-index:3;margin:-28px -28px 18px;padding:18px 28px 14px;background:#fffdfa;border-bottom:1px solid #eee6dd}.order-detail-close{flex:0 0 40px;border:2px solid #17181b;background:#fff;color:#17181b;box-shadow:3px 3px 0 #17181b}.order-detail-close:hover{background:#17181b;color:#fff}.order-detail-actions{padding-top:16px;border-top:1px solid #eee6dd}.order-detail-actions .btn{min-width:148px}@media(max-width:600px){.order-detail-head{top:-18px;margin:-18px -18px 16px;padding:14px 18px 12px}.order-detail-actions{flex-direction:row;justify-content:stretch}.order-detail-actions>*{width:auto;flex:1;justify-content:center}}

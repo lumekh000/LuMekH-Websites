@@ -3,6 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { randomBytes, randomInt, createHash, createCipheriv, createDecipheriv, scrypt, timingSafeEqual } = require("node:crypto");
 const { promisify } = require("node:util");
+const zlib = require("node:zlib");
 const mysql = require("mysql2/promise");
 const nodemailer = require("nodemailer");
 
@@ -27,6 +28,41 @@ const dbPool = dbConfigured ? mysql.createPool({
 }) : null;
 let dbReady = false;
 const loginAttempts = new Map();
+
+function decodePngRgba(input) {
+  if (!Buffer.isBuffer(input) || input.length < 33 || input.toString("ascii", 1, 4) !== "PNG") return null;
+  let width=0,height=0,bitDepth=0,colorType=0,interlace=0;const chunks=[];
+  for(let offset=8;offset+12<=input.length;){const length=input.readUInt32BE(offset),type=input.toString("ascii",offset+4,offset+8),data=input.subarray(offset+8,offset+8+length);if(type==="IHDR"){width=data.readUInt32BE(0);height=data.readUInt32BE(4);bitDepth=data[8];colorType=data[9];interlace=data[12]}else if(type==="IDAT")chunks.push(data);else if(type==="IEND")break;offset+=length+12}
+  if(!width||!height||width>512||height>512||bitDepth!==8||colorType!==6||interlace!==0)return null;
+  const packed=zlib.inflateSync(Buffer.concat(chunks)),stride=width*4,raw=Buffer.alloc(stride*height);let p=0;
+  for(let y=0;y<height;y++){const filter=packed[p++],row=y*stride;for(let x=0;x<stride;x++){const value=packed[p++],left=x>=4?raw[row+x-4]:0,up=y?raw[row-stride+x]:0,upperLeft=y&&x>=4?raw[row-stride+x-4]:0;let predictor=0;if(filter===1)predictor=left;else if(filter===2)predictor=up;else if(filter===3)predictor=Math.floor((left+up)/2);else if(filter===4){const estimate=left+up-upperLeft,dl=Math.abs(estimate-left),du=Math.abs(estimate-up),dul=Math.abs(estimate-upperLeft);predictor=dl<=du&&dl<=dul?left:du<=dul?up:upperLeft}else if(filter!==0)throw new Error("Unsupported logo PNG filter");raw[row+x]=(value+predictor)&255}}
+  const rgb=Buffer.alloc(width*height*3),alpha=Buffer.alloc(width*height);for(let i=0,j=0;i<raw.length;i+=4,j++){rgb[j*3]=raw[i];rgb[j*3+1]=raw[i+1];rgb[j*3+2]=raw[i+2];alpha[j]=raw[i+3]}return{width,height,rgb,alpha};
+}
+
+function makePdf(objects) {
+  const parts=[Buffer.from("%PDF-1.4\n","ascii")],offsets=[0];let length=parts[0].length;
+  for(let i=1;i<objects.length;i++){offsets[i]=length;const part=Buffer.concat([Buffer.from(i+" 0 obj\n","ascii"),Buffer.isBuffer(objects[i])?objects[i]:Buffer.from(String(objects[i]),"binary"),Buffer.from("\nendobj\n","ascii")]);parts.push(part);length+=part.length}
+  const xref=length;let tail="xref\n0 "+objects.length+"\n0000000000 65535 f \n";for(let i=1;i<objects.length;i++)tail+=String(offsets[i]).padStart(10,"0")+" 00000 n \n";tail+="trailer\n<< /Size "+objects.length+" /Root 1 0 R >>\nstartxref\n"+xref+"\n%%EOF";parts.push(Buffer.from(tail,"ascii"));return Buffer.concat(parts);
+}
+
+function brandedInvoicePdf({title,number,date,status,customer,email,phone,address,service,provider,dates,items,total,notes}) {
+  const esc=value=>String(value??"—").replace(/₹/g,"INR ").replace(/[^\x20-\x7E]/g,"").replace(/\\/g,"\\\\").replace(/\(/g,"\\(").replace(/\)/g,"\\)").replace(/\s+/g," ").trim()||"—";
+  const commands=[],text=(value,x,y,size=10,color="0.12 0.12 0.13")=>commands.push("BT /F1 "+size+" Tf "+color+" rg 1 0 0 1 "+x+" "+y+" Tm ("+esc(value)+") Tj ET"),rect=(x,y,w,h,fill,stroke=null)=>{commands.push("q "+(stroke?"1 w "+stroke+" RG ":"")+fill+" rg "+x+" "+y+" "+w+" "+h+" re "+(stroke?"B":"f")+" Q")};
+  commands.push("0.98 0.97 0.95 rg 0 0 595 842 re f");rect(30,736,535,76,"0.07 0.07 0.08",null);text("LuMekH",98,778,18,"1 1 1");text("LOVE WE MAKE",99,761,7,"0.91 0.87 0.85");text(title,380,783,14,"1 1 1");text("#"+number,380,760,10,"1 1 1");
+  text("INVOICE SUMMARY",42,704,8,"0.91 0.25 0.17");text("Issued "+date,42,684,10);text("Status: "+status,365,684,10);
+  rect(38,553,519,104,"1 1 1","0.92 0.85 0.78");text("CUSTOMER",54,630,8,"0.91 0.25 0.17");text(customer,54,608,12);text(email,54,589,9,"0.36 0.35 0.38");text(phone,320,608,10);text(address,320,589,9,"0.36 0.35 0.38");
+  text(title==="Booking invoice"?"BOOKING DETAILS":"ORDER DETAILS",42,525,8,"0.91 0.25 0.17");text(service,42,502,12);if(provider)text("Provider: "+provider,42,483,9,"0.36 0.35 0.38");
+  let y=460;if(dates?.length){text("BOOKING DATE(S)",42,y,8,"0.91 0.25 0.17");y-=17;const dateLine=dates.join(" · ");for(let i=0;i<dateLine.length;i+=86){text(dateLine.slice(i,i+86),42,y,8,"0.36 0.35 0.38");y-=13;if(i>=172)break}y-=4}
+  text("ITEM",48,y,8,"0.36 0.35 0.38");text("QTY",345,y,8,"0.36 0.35 0.38");text("UNIT PRICE",405,y,8,"0.36 0.35 0.38");text("AMOUNT",493,y,8,"0.36 0.35 0.38");commands.push("0.90 0.86 0.82 RG 42 "+(y-8)+" m 553 "+(y-8)+" l S");y-=28;
+  const rows=items?.length?items:[{name:"Service booking",quantity:1,price:total,total}];for(const item of rows.slice(0,10)){text(item.name||item.product_name||"Item",48,y,9);text(String(item.quantity||1),350,y,9);text("INR "+Number(item.price??item.unitPrice??0).toFixed(2),405,y,8);text("INR "+Number(item.total??item.line_total??Number(item.price??item.unitPrice??0)*Number(item.quantity||1)).toFixed(2),493,y,8);y-=22}
+  if(notes){y-=5;text("Notes: "+notes,48,y,8,"0.36 0.35 0.38");y-=18}
+  commands.push("0.90 0.86 0.82 RG 42 "+(y-2)+" m 553 "+(y-2)+" l S");rect(345,y-70,208,52,"1 1 1","0.92 0.85 0.78");text("TOTAL",360,y-40,9,"0.36 0.35 0.38");text("INR "+Number(total||0).toFixed(2),435,y-42,13,"0.91 0.25 0.17");text("Thank you for choosing LuMekH.",42,54,9,"0.36 0.35 0.38");text("This document is a transaction summary, not a tax invoice.",42,38,7,"0.48 0.46 0.45");
+  const content=Buffer.from(commands.join("\n"),"ascii"),objects=[null,"<< /Type /Catalog /Pages 2 0 R >>","<< /Type /Pages /Kids [3 0 R] /Count 1 >>",null,"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",null,null,null,null];
+  let resources="/Font << /F1 4 0 R >>";try{const logo=decodePngRgba(fs.readFileSync(path.join(publicDir,"assets/lumekh-logo.png")));if(logo){const alpha=zlib.deflateSync(logo.alpha),rgb=zlib.deflateSync(logo.rgb);objects[6]=Buffer.concat([Buffer.from("<< /Type /XObject /Subtype /Image /Width "+logo.width+" /Height "+logo.height+" /ColorSpace /DeviceGray /BitsPerComponent 8 /Filter /FlateDecode /Length "+alpha.length+" >>\nstream\n","ascii"),alpha,Buffer.from("\nendstream","ascii")]);objects[7]=Buffer.concat([Buffer.from("<< /Type /XObject /Subtype /Image /Width "+logo.width+" /Height "+logo.height+" /ColorSpace /DeviceRGB /BitsPerComponent 8 /SMask 6 0 R /Filter /FlateDecode /Length "+rgb.length+" >>\nstream\n","ascii"),rgb,Buffer.from("\nendstream","ascii")]);resources+=" /XObject << /Logo 7 0 R >>";commands.splice(2,0,"q 42 0 0 42 48 753 cm /Logo Do Q");}}
+  catch(error){console.warn("Could not embed LuMekH logo in invoice PDF:",error.message)}
+  objects[3]="<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << "+resources+" >> /Contents 5 0 R >>";const finalContent=Buffer.from(commands.join("\n"),"ascii");objects[5]=Buffer.concat([Buffer.from("<< /Length "+finalContent.length+" >>\nstream\n","ascii"),finalContent,Buffer.from("\nendstream","ascii")]);return makePdf(objects);
+}
+
 
 const schema = [
   "CREATE TABLE IF NOT EXISTS app_users (id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, name VARCHAR(120) NOT NULL, email VARCHAR(254) NOT NULL UNIQUE, password_hash VARCHAR(255) NOT NULL, role ENUM('customer','admin') NOT NULL DEFAULT 'customer', email_verified TINYINT(1) NOT NULL DEFAULT 0, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, INDEX idx_users_created (created_at)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
@@ -1050,24 +1086,19 @@ async function api(req, res, url) {
     const bookingDetailRoute=route.match(/^\/api\/admin\/bookings\/(\d+)(\/pdf)?$/);
     if(req.method==="GET"&&bookingDetailRoute){
       const id=Number(bookingDetailRoute[1]);
-      const [[booking]]=await dbPool.execute("SELECT b.id,b.starts_at,b.booking_dates_json,b.booking_extras_json,b.total_price,b.status,b.notes,b.created_at,b.customer_full_name,b.customer_phone,b.customer_address,b.customer_city,b.customer_postal_code,COALESCE(NULLIF(b.customer_full_name,''),u.name) AS customer_name,u.email AS customer_email,s.name AS service_name,s.booking_mode,s.duration_minutes,r.name AS resource_name,r.resource_type FROM bookings b JOIN app_users u ON u.id=b.user_id JOIN services s ON s.id=b.service_id LEFT JOIN booking_resources r ON r.id=b.resource_id WHERE b.id=? LIMIT 1",[id]);
+      const [[booking]]=await dbPool.execute("SELECT b.id,b.starts_at,b.booking_dates_json,b.booking_extras_json,b.total_price,b.status,b.notes,b.created_at,b.customer_full_name,b.customer_phone,b.customer_address,b.customer_city,b.customer_postal_code,COALESCE(NULLIF(b.customer_full_name,''),u.name) AS customer_name,u.email AS customer_email,s.name AS service_name,s.duration_minutes,s.booking_mode,s.price,r.name AS resource_name FROM bookings b JOIN app_users u ON u.id=b.user_id JOIN services s ON s.id=b.service_id LEFT JOIN booking_resources r ON r.id=b.resource_id WHERE b.id=? LIMIT 1",[id]);
       if(!booking)return sendError(res,404,"Booking not found.");
-      let dates=[];try{dates=JSON.parse(booking.booking_dates_json||"[]")}catch(_){}
-      let extras=[];try{extras=JSON.parse(booking.booking_extras_json||"[]")}catch(_){}
+      let dates=[],extras=[];try{dates=JSON.parse(booking.booking_dates_json||"[]")}catch(_){}try{extras=JSON.parse(booking.booking_extras_json||"[]")}catch(_){}
       if(!bookingDetailRoute[2])return sendJson(res,200,{booking,dates:Array.isArray(dates)?dates:[],extras:Array.isArray(extras)?extras:[]});
-      const plain=value=>String(value??"").replace(/₹/g,"INR ").replace(/[^\x20-\x7E]/g,"").replace(/\s+/g," ").trim();
-      const wrap=(value,width=88)=>{const words=plain(value).split(" ");const lines=[];let line="";for(const word of words){if((line+" "+word).trim().length>width&&line){lines.push(line);line=word}else line=(line+" "+word).trim()}if(line)lines.push(line);return lines.length?lines:[""]};
-      const pdfLines=[["LuMekH Booking","#"+booking.id],["Requested",new Date(booking.created_at).toLocaleString("en-IN",{timeZone:"Asia/Kolkata"})],["Status",booking.status],["Customer",booking.customer_name],["Email",booking.customer_email],["Mobile",booking.customer_phone],["Address",[booking.customer_address,booking.customer_city,booking.customer_postal_code].filter(Boolean).join(", ")],["Service",booking.service_name],["Company or studio",booking.resource_name||"—"],"","Booking dates"];
-      for(const date of (Array.isArray(dates)?dates:[]))pdfLines.push(plain(date.date||date.startsAt||"")+" · "+plain(date.endDate||"")+" · "+plain(date.time||""));
-      pdfLines.push("","Optional extras");for(const extra of (Array.isArray(extras)?extras:[]))pdfLines.push(plain(extra.name)+" · Qty "+plain(extra.quantity||1)+" · INR "+Number(extra.unitPrice??extra.price??0).toFixed(2));
-      pdfLines.push("","Notes: "+plain(booking.notes||"—"),"","Booking total: INR "+Number(booking.total_price||0).toFixed(2));
-      const lines=[];for(const row of pdfLines){if(Array.isArray(row))lines.push(...wrap(row[0]+": "+row[1]));else lines.push(...wrap(row))}
-      const pages=[];for(let i=0;i<lines.length;i+=48)pages.push(lines.slice(i,i+48));
-      const objects=["","<< /Type /Catalog /Pages 2 0 R >>","","<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"],pageRefs=[];
-      for(let p=0;p<pages.length;p++){const pageObj=5+p*2,contentObj=pageObj+1;pageRefs.push(pageObj+" 0 R");let stream="BT\n/F1 10 Tf\n50 790 Td\n14 TL\n";for(const line of pages[p])stream+="("+plain(line).replace(/\\/g,"\\\\").replace(/\(/g,"\\(").replace(/\)/g,"\\)")+ ") Tj\nT*\n";stream+="ET";objects[pageObj]="<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents "+contentObj+" 0 R >>";objects[contentObj]="<< /Length "+Buffer.byteLength(stream,"ascii")+" >>\nstream\n"+stream+"\nendstream"}
-      objects[2]="<< /Type /Pages /Kids ["+pageRefs.join(" ")+"] /Count "+pages.length+" >>";
-      let pdf="%PDF-1.4\n",offsets=[0];for(let i=1;i<objects.length;i++){offsets[i]=Buffer.byteLength(pdf,"ascii");pdf+=i+" 0 obj\n"+objects[i]+"\nendobj\n"}const xref=Buffer.byteLength(pdf,"ascii");pdf+="xref\n0 "+objects.length+"\n0000000000 65535 f \n";for(let i=1;i<objects.length;i++)pdf+=String(offsets[i]).padStart(10,"0")+" 00000 n \n";pdf+="trailer\n<< /Size "+objects.length+" /Root 1 0 R >>\nstartxref\n"+xref+"\n%%EOF";
-      const buffer=Buffer.from(pdf,"ascii");res.writeHead(200,{"Content-Type":"application/pdf","Content-Disposition":"attachment; filename=\"LuMekH-booking-"+id+".pdf\"","Content-Length":buffer.length});res.end(buffer);return;
+      const dateLabel=value=>{const date=value instanceof Date?value:(typeof value==="string"?value:(value?.startsAt||value?.date||""));if(!date)return"";const parsed=date instanceof Date?date:new Date(date);return Number.isNaN(parsed.getTime())?String(date):parsed.toLocaleString("en-IN",{timeZone:"Asia/Kolkata",dateStyle:"medium",...(String(date).includes("T")||date instanceof Date?{timeStyle:"short"}:{})})};
+      const dateList=Array.isArray(dates)?dates.map(dateLabel).filter(Boolean):[];if(!dateList.length)dateList.push(dateLabel(booking.starts_at));
+      const bookingCount=Math.max(1,dateList.length),bookingTotal=Number(booking.total_price||0);
+      const extraItems=extras.map(extra=>{const unitPrice=Number(extra.unitPrice??extra.price??0),quantity=Math.max(1,Number(extra.quantity||1)),units=extra.pricePerDay?bookingCount:1;return{name:extra.name||"Service extra",quantity:quantity*units,price:unitPrice,total:unitPrice*quantity*units}});
+      const extrasTotal=extraItems.reduce((sum,item)=>sum+item.total,0),serviceLineTotal=Math.max(0,bookingTotal-extrasTotal);
+      const items=[{name:booking.service_name,quantity:bookingCount,price:bookingCount?serviceLineTotal/bookingCount:serviceLineTotal,total:serviceLineTotal},...extraItems];
+      const address=[booking.customer_address,booking.customer_city,booking.customer_postal_code].filter(Boolean).join(", ")||"—";
+      const pdf=brandedInvoicePdf({title:"Booking invoice",number:id,date:dateLabel(booking.created_at),status:booking.status,customer:booking.customer_name,email:booking.customer_email,phone:booking.customer_phone,address,service:booking.service_name,provider:booking.resource_name,dates:dateList,items,total:booking.total_price,notes:booking.notes});
+      res.writeHead(200,{"Content-Type":"application/pdf","Content-Disposition":"attachment; filename=\"LuMekH-booking-"+id+".pdf\"","Content-Length":pdf.length});res.end(pdf);return;
     }
     const deleteBookingMatch=route.match(/^\/api\/admin\/bookings\/(\d+)$/);
     if(req.method==="DELETE"&&deleteBookingMatch){
@@ -1083,19 +1114,9 @@ async function api(req, res, url) {
       if(!order)return sendError(res,404,"Order not found.");
       const [items]=await dbPool.execute("SELECT product_id,product_name,quantity,unit_price,(quantity*unit_price) AS line_total FROM order_items WHERE order_id=? ORDER BY id",[id]);
       if(!orderDetailRoute[2])return sendJson(res,200,{order,items});
-      const plain=value=>String(value??"").replace(/₹/g,"INR ").replace(/[^\x20-\x7E]/g,"").replace(/\s+/g," ").trim();
-      const wrap=(value,width=88)=>{const words=plain(value).split(" ");const lines=[];let line="";for(const word of words){if((line+" "+word).trim().length>width&&line){lines.push(line);line=word}else line=(line+" "+word).trim()}if(line)lines.push(line);return lines.length?lines:[""]};
-      const lines=[["LuMekH Order Invoice","#"+order.id],["Date",new Date(order.created_at).toLocaleString("en-IN",{timeZone:"Asia/Kolkata"})],["Status",order.status],["Customer",order.full_name],["Account",order.customer_email],["Phone",order.phone],["Address",[order.address,order.city,order.postal_code].filter(Boolean).join(", ")],"","Purchased items"];
-      const pdfLines=[];for(const row of lines){if(Array.isArray(row))pdfLines.push(...wrap(row[0]+": "+row[1]));else pdfLines.push(...wrap(row))}
-      for(const item of items)pdfLines.push(...wrap(item.product_name+" | Qty "+item.quantity+" | INR "+Number(item.unit_price).toFixed(2)+" each | INR "+Number(item.line_total).toFixed(2)));
-      pdfLines.push("","Order total: INR "+Number(order.total).toFixed(2));
-      const pages=[];for(let i=0;i<pdfLines.length;i+=48)pages.push(pdfLines.slice(i,i+48));
-      const objects=["","<< /Type /Catalog /Pages 2 0 R >>","","<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"];
-      const pageRefs=[];
-      for(let p=0;p<pages.length;p++){const pageObj=5+p*2,contentObj=pageObj+1;pageRefs.push(pageObj+" 0 R");let stream="BT\n/F1 10 Tf\n50 790 Td\n14 TL\n";for(const line of pages[p])stream+="("+plain(line).replace(/\\/g,"\\\\").replace(/\(/g,"\\(").replace(/\)/g,"\\)")+ ") Tj\nT*\n";stream+="ET";objects[pageObj]="<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents "+contentObj+" 0 R >>";objects[contentObj]="<< /Length "+Buffer.byteLength(stream,"ascii")+" >>\nstream\n"+stream+"\nendstream"}
-      objects[2]="<< /Type /Pages /Kids ["+pageRefs.join(" ")+"] /Count "+pages.length+" >>";
-      let pdf="%PDF-1.4\n",offsets=[0];for(let i=1;i<objects.length;i++){offsets[i]=Buffer.byteLength(pdf,"ascii");pdf+=i+" 0 obj\n"+objects[i]+"\nendobj\n"}const xref=Buffer.byteLength(pdf,"ascii");pdf+="xref\n0 "+objects.length+"\n0000000000 65535 f \n";for(let i=1;i<objects.length;i++)pdf+=String(offsets[i]).padStart(10,"0")+" 00000 n \n";pdf+="trailer\n<< /Size "+objects.length+" /Root 1 0 R >>\nstartxref\n"+xref+"\n%%EOF";
-      const buffer=Buffer.from(pdf,"ascii");res.writeHead(200,{"Content-Type":"application/pdf","Content-Disposition":"attachment; filename=\"LuMekH-order-"+id+".pdf\"","Content-Length":buffer.length});res.end(buffer);return;
+      const address=[order.address,order.city,order.postal_code].filter(Boolean).join(", ")||"—";
+      const pdf=brandedInvoicePdf({title:"Order invoice",number:id,date:new Date(order.created_at).toLocaleString("en-IN",{timeZone:"Asia/Kolkata"}),status:order.status,customer:order.full_name,email:order.customer_email,phone:order.phone,address,service:"Store purchase",items:items.map(item=>({name:item.product_name,quantity:item.quantity,price:Number(item.unit_price),total:Number(item.line_total)})),total:order.total});
+      res.writeHead(200,{"Content-Type":"application/pdf","Content-Disposition":"attachment; filename=\"LuMekH-order-"+id+".pdf\"","Content-Length":pdf.length});res.end(pdf);return;
     }
     const deleteOrderMatch = route.match(/^\/api\/admin\/orders\/(\d+)$/);
     if (req.method === "DELETE" && deleteOrderMatch) {
