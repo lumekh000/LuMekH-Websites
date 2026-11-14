@@ -1716,3 +1716,6 @@ header.topbar a.header-cart:hover{color:#151515!important;background:#fff0f5!imp
  .store-catalog-panel .store-product-info{min-height:238px}
 }
 @media(prefers-reduced-motion:reduce){.store-catalog-panel .store-product-card,.store-catalog-panel .store-product-media img{transition:none!important}}
+
+/* Keep product type text out of the circular photo thumbnail. */
+.store-catalog-panel .store-product-media>.store-type-pill{display:none!important}
