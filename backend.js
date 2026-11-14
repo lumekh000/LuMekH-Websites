@@ -1068,7 +1068,7 @@ async function api(req, res, url) {
       let pdf="%PDF-1.4\n",offsets=[0];for(let i=1;i<objects.length;i++){offsets[i]=Buffer.byteLength(pdf,"ascii");pdf+=i+" 0 obj\n"+objects[i]+"\nendobj\n"}const xref=Buffer.byteLength(pdf,"ascii");pdf+="xref\n0 "+objects.length+"\n0000000000 65535 f \n";for(let i=1;i<objects.length;i++)pdf+=String(offsets[i]).padStart(10,"0")+" 00000 n \n";pdf+="trailer\n<< /Size "+objects.length+" /Root 1 0 R >>\nstartxref\n"+xref+"\n%%EOF";
       const buffer=Buffer.from(pdf,"ascii");res.writeHead(200,{"Content-Type":"application/pdf","Content-Disposition":"attachment; filename=\"LuMekH-order-"+id+".pdf\"","Content-Length":buffer.length});res.end(buffer);return;
     }
-    const deleteOrderMatch = route.match(/^\\/api\\/admin\\/orders\\/(\\d+)$/);
+    const deleteOrderMatch = route.match(/^\/api\/admin\/orders\/(\d+)$/);
     if (req.method === "DELETE" && deleteOrderMatch) {
       const id = Number(deleteOrderMatch[1]);
       const conn = await dbPool.getConnection();
