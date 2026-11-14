@@ -1068,6 +1068,42 @@ async function api(req, res, url) {
       let pdf="%PDF-1.4\n",offsets=[0];for(let i=1;i<objects.length;i++){offsets[i]=Buffer.byteLength(pdf,"ascii");pdf+=i+" 0 obj\n"+objects[i]+"\nendobj\n"}const xref=Buffer.byteLength(pdf,"ascii");pdf+="xref\n0 "+objects.length+"\n0000000000 65535 f \n";for(let i=1;i<objects.length;i++)pdf+=String(offsets[i]).padStart(10,"0")+" 00000 n \n";pdf+="trailer\n<< /Size "+objects.length+" /Root 1 0 R >>\nstartxref\n"+xref+"\n%%EOF";
       const buffer=Buffer.from(pdf,"ascii");res.writeHead(200,{"Content-Type":"application/pdf","Content-Disposition":"attachment; filename=\"LuMekH-order-"+id+".pdf\"","Content-Length":buffer.length});res.end(buffer);return;
     }
+    const deleteOrderMatch = route.match(/^\\/api\\/admin\\/orders\\/(\\d+)$/);
+    if (req.method === "DELETE" && deleteOrderMatch) {
+      const id = Number(deleteOrderMatch[1]);
+      const conn = await dbPool.getConnection();
+      let resetOrderNumbers = false;
+      try {
+        await conn.beginTransaction();
+        const [[order]] = await conn.execute("SELECT id,status FROM orders WHERE id=? FOR UPDATE", [id]);
+        if (!order) {
+          await conn.rollback();
+          return sendError(res, 404, "Order not found.");
+        }
+        if (order.status !== "cancelled") {
+          await conn.rollback();
+          return sendError(res, 409, "Only archived (cancelled) orders can be deleted.");
+        }
+        await conn.execute("DELETE FROM coupon_usage WHERE order_id=?", [id]);
+        await conn.execute("DELETE FROM orders WHERE id=?", [id]);
+        const [[remaining]] = await conn.query("SELECT COUNT(*) AS total FROM orders");
+        resetOrderNumbers = Number(remaining.total) === 0;
+        await conn.commit();
+      } catch (error) {
+        await conn.rollback();
+        throw error;
+      } finally {
+        conn.release();
+      }
+      if (resetOrderNumbers) {
+        try {
+          await dbPool.query("ALTER TABLE orders AUTO_INCREMENT = 1");
+        } catch (error) {
+          console.error("Could not reset order numbering after archive cleanup:", error.message);
+        }
+      }
+      return sendJson(res, 200, { message: resetOrderNumbers ? "Archived order deleted. The next order will start at #1." : "Archived order deleted." });
+    }
     if (req.method === "GET" && route === "/api/admin/orders") {
       const [rows] = await dbPool.query("SELECT o.id,o.total,o.status,o.full_name,o.phone,o.address,o.city,o.postal_code,o.created_at,u.email AS customer_email FROM orders o JOIN app_users u ON u.id=o.user_id ORDER BY o.created_at DESC LIMIT 300");
       return sendJson(res, 200, { orders: rows });
