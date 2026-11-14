@@ -1944,3 +1944,6 @@ header.topbar a.header-cart:hover{color:#151515!important;background:#fff0f5!imp
 .crm-data-table .status-choice:hover,.crm-data-table .status-choice:focus-visible{background:#f4f2ef;color:#111;outline:none}
 .crm-data-table .status-choice.is-selected{background:#17181b;color:#fff}
 .crm-data-table .status-choice.is-selected .status-dot{box-shadow:0 0 0 3px rgba(255,255,255,.18)}
+
+/* Keep CRM status menus visible inside the horizontally scrollable table. */
+.crm-data-table .status-control.opens-up .status-menu{top:auto;bottom:calc(100% + 7px)}
