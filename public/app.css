@@ -1474,7 +1474,7 @@ header.topbar a.header-cart:hover{color:#151515!important;background:#fff0f5!imp
 .checkout-page .pagehead .lead{margin:0;font-size:clamp(15px,1.6vw,18px)}
 .checkout-selection-panel{width:min(100%,1080px);margin:20px auto 26px;padding:18px 20px 20px;border:1px solid #eadfce;border-radius:24px;background:#fff;box-shadow:0 12px 32px rgba(35,28,20,.06)}
 .checkout-selection-panel[hidden]{display:none!important}
-.checkout-selection-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 12px}
+.checkout-selection-heading{display:block;margin:0 0 12px}
 .checkout-selection-heading .eyebrow{margin:0}
 .checkout-selection-heading h2{font-size:20px;margin:5px 0 0}
 .checkout-selection-panel .checkout-items{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}
@@ -1498,6 +1498,11 @@ header.topbar a.header-cart:hover{color:#151515!important;background:#fff0f5!imp
 .checkout-selection-panel .basket-line-controls button:not(.basket-remove){width:28px;height:28px;border:1px solid #211d19;border-radius:9px;background:#fff;color:#171717;font-weight:800}
 .checkout-selection-panel .basket-line-controls .basket-remove{border:0;background:transparent;color:#67443a;font-size:11px;text-decoration:underline}
 .checkout-selection-panel .checkout-service-card{display:block;min-height:190px;padding:20px 84px 18px 20px}
+.checkout-selection-panel #checkout-service-summary:not([hidden]){grid-template-columns:minmax(0,360px)}
+.checkout-selection-panel .checkout-service-card>.checkout-service-card-copy{display:block;min-width:0;margin:0;padding:0}
+.checkout-selection-panel .checkout-service-card>.checkout-service-card-copy h3{display:block;margin:0 0 7px;font-size:20px;line-height:1.2;letter-spacing:-.03em}
+.checkout-selection-panel .checkout-service-card>.checkout-service-card-copy p{display:block;margin:0 0 15px;line-height:1.5}
+.checkout-selection-panel .checkout-service-card .checkout-service-price{display:grid;justify-content:start;align-items:start;gap:4px;margin:0}
 .checkout-service-card-copy h3{margin:0 0 7px;font-size:20px;letter-spacing:-.03em}
 .checkout-service-card-copy p{margin:0 0 15px;color:#554b45;font-size:13px;line-height:1.5}
 .checkout-service-price{display:grid;gap:4px;margin-top:auto}
