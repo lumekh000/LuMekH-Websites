@@ -1737,3 +1737,52 @@ header.topbar a.header-cart:hover{color:#151515!important;background:#fff0f5!imp
 .store-catalog-panel .store-option-choice:hover,.store-catalog-panel .store-option-choice[aria-selected="true"]{background:#211d19;color:#fff}
 .store-catalog-panel .store-option-choice:disabled{opacity:.38;text-decoration:line-through;cursor:not-allowed}
 .store-catalog-panel .store-option-choice:disabled:hover{background:transparent;color:#211d19}
+
+
+/* Services expanded search: one input surface, no nested borders or clipped text. */
+.services-page .services-filterbar{
+ display:flex!important;align-items:center!important;justify-content:flex-start!important;
+ flex-wrap:nowrap!important;gap:14px!important;min-width:0
+}
+.services-page .services-filterbar>.search-control{
+ display:flex!important;align-items:center!important;gap:10px!important;
+ flex:0 1 auto!important;width:auto!important;min-width:0!important;grid-column:auto!important
+}
+.services-page .services-filterbar>.search-control:not(.is-open){
+ flex:0 0 48px!important;width:48px!important
+}
+.services-page .services-filterbar>.search-control.is-open{
+ flex:0 1 370px!important;width:min(370px,42vw)!important;max-width:100%!important
+}
+.services-page .services-filterbar .search-input-panel{
+ box-sizing:border-box!important;display:flex!important;align-items:center!important;
+ flex:1 1 auto!important;width:100%!important;min-width:0!important;height:48px!important;
+ padding:0 14px!important;border:1.5px solid #211d19!important;border-radius:15px!important;
+ background:#fff!important;box-shadow:none!important;overflow:hidden!important
+}
+.services-page .services-filterbar .search-input-panel input[type="search"]{
+ box-sizing:border-box!important;display:block!important;flex:1 1 auto!important;
+ width:100%!important;min-width:0!important;height:100%!important;padding:0!important;
+ border:0!important;border-radius:0!important;outline:0!important;box-shadow:none!important;
+ background:transparent!important;color:#171717!important;-webkit-text-fill-color:#171717!important;
+ caret-color:#171717!important;font:600 14px/1.4 Manrope,'DM Sans',sans-serif!important
+}
+.services-page .services-filterbar .search-input-panel input[type="search"]::placeholder{
+ color:#625950!important;-webkit-text-fill-color:#625950!important;opacity:1!important
+}
+.services-page .services-filterbar>.service-category{
+ flex:0 0 200px!important;width:200px!important;max-width:200px!important;min-width:0!important
+}
+.services-page .services-filterbar .search-toggle-button{
+ flex:0 0 48px!important;width:48px!important;min-width:48px!important
+}
+@media(max-width:760px){
+ .services-page .services-filterbar{flex-wrap:wrap!important}
+ .services-page .services-filterbar>.search-control.is-open{flex:1 1 260px!important;width:min(100%,370px)!important}
+ .services-page .services-filterbar>.service-category{flex:1 1 180px!important;width:auto!important;max-width:none!important}
+}
+@media(max-width:480px){
+ .services-page .services-filterbar{align-items:stretch!important}
+ .services-page .services-filterbar>.search-control.is-open{flex:1 1 100%!important;width:100%!important}
+ .services-page .services-filterbar>.service-category{flex:1 1 100%!important}
+}
