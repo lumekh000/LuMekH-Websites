@@ -263,6 +263,12 @@ function recordLoginFailure(req,email) {
   entry.count+=1;return entry.count;
 }
 function clearAttempts(req, email) { loginAttempts.delete(attemptKey(req, email)); }
+function allowLogin(req, email) {
+  const failures = loginFailureCount(req, email);
+  if (failures >= 8) return false;
+  recordLoginFailure(req, email);
+  return true;
+}
 
 async function readStoreSettings() {
   if (!dbReady) return {};
@@ -365,6 +371,7 @@ async function api(req, res, url) {
         await conn.execute("UPDATE app_users SET role='admin' WHERE id=?", [userId]);
       }
       await conn.commit();
+      clearAttempts(req, "verify-email-code");
       const [rows] = await conn.execute("SELECT role FROM app_users WHERE id=?", [userId]);
       return sendJson(res, 200, { message: "Email confirmed. You can now sign in.", role: rows[0].role });
     } catch (error) {
