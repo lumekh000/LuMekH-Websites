@@ -1563,3 +1563,41 @@ header.topbar a.header-cart:hover{color:#151515!important;background:#fff0f5!imp
 .checkout-page .booking-extra-main input[type="checkbox"]{appearance:none!important;-webkit-appearance:none!important;display:grid!important;place-items:center!important;box-sizing:border-box!important;flex:0 0 19px!important;width:19px!important;min-width:19px!important;max-width:19px!important;height:19px!important;min-height:19px!important;max-height:19px!important;padding:0!important;margin:1px 0 0!important;line-height:1!important;border:1.5px solid #272320!important;border-radius:6px!important;background:#fff!important;cursor:pointer}
 .checkout-page .booking-extra-main input[type="checkbox"]:checked{background:#171717!important;border-color:#171717!important}
 .checkout-page .booking-extra-main input[type="checkbox"]:checked::after{content:"✓";color:#fff;font-size:13px;font-weight:800;line-height:1}
+
+/* Checkout visual system: compact scale with the same paper-cut cards on every screen. */
+.checkout-page .pagehead{width:min(calc(100% - 36px),960px);margin-inline:auto}
+.checkout-page .pagehead h1{font-size:clamp(32px,4.2vw,46px);line-height:1.04}
+.checkout-page .pagehead .lead{font-size:clamp(15px,1.6vw,18px)}
+.checkout-page .checkout-selection-panel{width:min(calc(100% - 36px),960px);box-sizing:border-box}
+.checkout-page .checkout-grid{width:min(calc(100% - 36px),960px)!important;max-width:960px!important;margin-inline:auto}
+.checkout-page .checkout-form{padding:clamp(20px,2.5vw,28px)}
+.checkout-page .booking-extras{grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.checkout-page .booking-extra-card{grid-template-columns:clamp(48px,6vw,60px) minmax(0,1fr);align-items:start;gap:10px;padding:14px;border:2px solid #211d19;border-radius:20px;background:#ffd4c1;box-shadow:5px 5px 0 #211d19;transition:transform .18s ease,box-shadow .18s ease,background .18s ease}
+.checkout-page .booking-extra-card:hover{transform:translate(-1px,-1px);box-shadow:6px 6px 0 #211d19}
+.checkout-page .booking-extra-card.is-selected{border-color:#211d19;background:#ffe0d2;box-shadow:5px 5px 0 #211d19}
+.checkout-page .booking-extra-image-carousel{width:clamp(48px,6vw,60px);height:clamp(48px,6vw,60px);border:3px solid #211d19;border-radius:50%;background:#fff;box-shadow:2px 2px 0 #211d19}
+.checkout-page .booking-extra-image-carousel.is-placeholder{border-style:solid}
+.checkout-page .booking-extra-main{align-items:flex-start}
+.checkout-page .booking-extra-main input[type="checkbox"]{border:2px solid #211d19!important;border-radius:6px!important;background:#fff!important}
+.checkout-page .booking-extra-main input[type="checkbox"]:checked{background:#171717!important;border-color:#171717!important}
+.checkout-page .booking-extra-pricing{color:#211d19}
+.checkout-page .booking-extras-total{display:grid;gap:7px;margin-top:14px;padding:15px 17px;border:2px solid #211d19;border-radius:18px;background:#fff;box-shadow:4px 4px 0 #211d19}
+.checkout-page .booking-price-summary-title{font-size:14px;font-weight:800;letter-spacing:.02em}
+.checkout-page .booking-price-summary-row,.checkout-page .booking-price-summary-grand{display:flex;align-items:center;justify-content:space-between;gap:16px}
+.checkout-page .booking-price-summary-row{font-size:13px;color:#5d554f}
+.checkout-page .booking-price-summary-row strong{color:#211d19}
+.checkout-page .booking-price-summary-grand{margin-top:4px;padding-top:10px;border-top:1px solid #ded7d0;font-size:15px;font-weight:800;color:#211d19}
+@media(max-width:760px){
+ .checkout-page .pagehead,.checkout-page .checkout-selection-panel,.checkout-page .checkout-grid{width:calc(100% - 28px)!important}
+ .checkout-page .booking-extras{grid-template-columns:1fr}
+ .checkout-page .booking-extra-card{grid-template-columns:52px minmax(0,1fr);padding:12px;border-radius:18px;box-shadow:4px 4px 0 #211d19}
+ .checkout-page .booking-extra-image-carousel{width:52px;height:52px}
+}
+@media(max-width:480px){
+ .checkout-page .pagehead{width:calc(100% - 24px)!important}
+ .checkout-page .checkout-selection-panel,.checkout-page .checkout-grid{width:calc(100% - 24px)!important}
+ .checkout-page .pagehead h1{font-size:clamp(30px,8.5vw,36px)}
+ .checkout-page .checkout-form{padding:19px 16px}
+ .checkout-page .booking-extra-card{grid-template-columns:48px minmax(0,1fr);gap:9px;padding:11px;border-radius:17px;box-shadow:4px 4px 0 #211d19}
+ .checkout-page .booking-extra-image-carousel{width:48px;height:48px}
+}
