@@ -1,0 +1,34 @@
+/* CRM status menu: it is portalled to <body>, so give it standalone styles. */
+.status-menu.status-menu-portal{
+ box-sizing:border-box!important;min-width:184px!important;
+ max-width:min(240px,calc(100vw - 16px))!important;
+ gap:4px!important;padding:7px!important;border:1px solid #d9d5ce!important;
+ border-radius:16px!important;background:#fff!important;
+ box-shadow:0 16px 38px rgba(22,20,18,.2)!important;
+ backdrop-filter:blur(12px)
+}
+.status-menu.status-menu-portal[hidden]{display:none!important}
+.status-menu.status-menu-portal .status-choice{
+ box-sizing:border-box!important;display:flex!important;align-items:center!important;
+ gap:10px!important;width:100%!important;min-height:38px!important;
+ padding:9px 11px!important;border:0!important;border-radius:10px!important;
+ background:transparent!important;color:#27272b!important;text-align:left!important;
+ text-transform:capitalize!important;font:600 13px/1.2 'DM Sans',sans-serif!important;
+ cursor:pointer!important;appearance:none!important;-webkit-appearance:none!important;
+ box-shadow:none!important;transition:background .15s,color .15s
+}
+.status-menu.status-menu-portal .status-choice:hover,
+.status-menu.status-menu-portal .status-choice:focus-visible{
+ background:#f3f1ee!important;color:#111!important;
+ outline:2px solid #17181b!important;outline-offset:-2px
+}
+.status-menu.status-menu-portal .status-choice.is-selected{
+ background:#17181b!important;color:#fff!important
+}
+.status-menu.status-menu-portal .status-dot{
+ display:inline-block!important;flex:0 0 8px!important;width:8px!important;
+ height:8px!important;border-radius:50%!important
+}
+.status-menu.status-menu-portal .status-choice.is-selected .status-dot{
+ box-shadow:0 0 0 3px rgba(255,255,255,.18)!important
+}
