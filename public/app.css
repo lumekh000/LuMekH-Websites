@@ -1884,3 +1884,12 @@ header.topbar a.header-cart:hover{color:#151515!important;background:#fff0f5!imp
 .services-page .service-catalog-panel .services-filterbar>.service-category>span{position:static!important;margin:0!important;line-height:14px!important}
 .services-page .service-catalog-panel .services-filterbar>.service-category select{width:100%!important;min-width:0!important;height:48px!important;box-sizing:border-box!important}
 @media(max-width:600px){.services-page .service-catalog-panel .services-filterbar{grid-template-columns:48px minmax(0,1fr)!important;gap:10px!important;padding:12px!important}.services-page .service-catalog-panel .services-filterbar>.service-search-control{grid-column:1!important;grid-row:1!important}.services-page .service-catalog-panel .services-filterbar .service-search-control.is-open{grid-column:1/-1!important;width:100%!important}.services-page .service-catalog-panel .services-filterbar>.service-category{grid-column:1/-1!important;grid-row:2!important}}
+
+
+/* Services filter alignment: align the search control with the category select, not its label. */
+@media(min-width:601px){
+ .services-page .service-catalog-panel .services-filterbar>.service-search-control{transform:translateY(8px)!important}
+}
+@media(max-width:600px){
+ .services-page .service-catalog-panel .services-filterbar>.service-search-control{transform:none!important}
+}
