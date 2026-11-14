@@ -1543,3 +1543,13 @@ header.topbar a.header-cart:hover{color:#151515!important;background:#fff0f5!imp
 .checkout-selection-panel .checkout-product-carousel{width:58px;height:58px}
 .checkout-selection-panel .checkout-product-card .basket-line-total{display:block;margin-top:10px;text-align:left}
 @media(max-width:480px){.checkout-selection-panel .checkout-product-card{padding:16px 76px 15px 16px;min-height:180px}.checkout-selection-panel .checkout-product-photo{width:50px;height:50px;top:12px;right:12px}.checkout-selection-panel .checkout-product-carousel{width:50px;height:50px}}
+
+/* Keep the selected service compact beneath the checkout heading. */
+.checkout-selection-panel:has(#checkout-service-summary:not([hidden])){padding:0;margin:12px auto 18px;border:0;background:transparent;box-shadow:none}
+.checkout-selection-panel:has(#checkout-service-summary:not([hidden])) .checkout-selection-footer{margin-top:12px;padding:0;border:0}
+.checkout-selection-panel .checkout-service-card{width:min(100%,360px);box-sizing:border-box}
+.checkout-page .booking-extra-image-carousel{display:block;width:58px;height:58px;overflow:hidden;border-radius:13px;border:1px solid #e9ded3;background:linear-gradient(145deg,#fffaf5,#f0e5dc)}
+.checkout-page .booking-extra-image-carousel.is-placeholder{display:block}
+.checkout-page .booking-extra-image-carousel img{width:100%;height:100%;object-fit:cover}
+.checkout-page .booking-extra-main input:focus-visible{outline:3px solid #ff9d83;outline-offset:2px}
+@media(max-width:480px){.checkout-page .booking-extra-image-carousel{width:48px;height:48px}}
