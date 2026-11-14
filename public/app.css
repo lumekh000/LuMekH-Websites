@@ -1871,3 +1871,16 @@ header.topbar a.header-cart:hover{color:#151515!important;background:#fff0f5!imp
  .services-page .service-catalog-panel .services-filterbar{grid-template-columns:48px minmax(0,1fr)!important}
  .services-page .service-catalog-panel .service-search-control.is-open{width:100%!important}
 }
+
+
+/* Services search: keep the collapsed icon separate from its truly hidden input. */
+.services-page .service-catalog-panel .services-filterbar{display:grid!important;grid-template-columns:48px minmax(0,220px)!important;align-items:center!important;justify-content:start!important;gap:12px!important;width:100%!important;box-sizing:border-box!important}
+.services-page .service-catalog-panel .services-filterbar>.service-search-control{display:flex!important;grid-column:1!important;grid-row:1!important;align-items:center!important;width:48px!important;min-width:48px!important;height:48px!important;overflow:visible!important}
+.services-page .service-catalog-panel .services-filterbar .service-search-control>.search-toggle-button{flex:0 0 48px!important;width:48px!important;height:48px!important;z-index:2!important}
+.services-page .service-catalog-panel .services-filterbar .service-search-control>.service-search.filter-search-panel[hidden]{display:none!important;position:absolute!important;width:1px!important;height:1px!important;padding:0!important;border:0!important;overflow:hidden!important}
+.services-page .service-catalog-panel .services-filterbar .service-search-control.is-open{width:min(290px,100%)!important;min-width:0!important}
+.services-page .service-catalog-panel .services-filterbar .service-search-control.is-open>.service-search.filter-search-panel:not([hidden]){display:flex!important;flex:1 1 auto!important;width:auto!important;min-width:0!important;height:48px!important;box-sizing:border-box!important}
+.services-page .service-catalog-panel .services-filterbar>.service-category{display:grid!important;grid-column:2!important;grid-row:1!important;grid-template-rows:auto 48px!important;align-content:center!important;gap:4px!important;width:100%!important;min-width:0!important;margin:0!important}
+.services-page .service-catalog-panel .services-filterbar>.service-category>span{position:static!important;margin:0!important;line-height:14px!important}
+.services-page .service-catalog-panel .services-filterbar>.service-category select{width:100%!important;min-width:0!important;height:48px!important;box-sizing:border-box!important}
+@media(max-width:600px){.services-page .service-catalog-panel .services-filterbar{grid-template-columns:48px minmax(0,1fr)!important;gap:10px!important;padding:12px!important}.services-page .service-catalog-panel .services-filterbar>.service-search-control{grid-column:1!important;grid-row:1!important}.services-page .service-catalog-panel .services-filterbar .service-search-control.is-open{grid-column:1/-1!important;width:100%!important}.services-page .service-catalog-panel .services-filterbar>.service-category{grid-column:1/-1!important;grid-row:2!important}}
