@@ -1601,3 +1601,33 @@ header.topbar a.header-cart:hover{color:#151515!important;background:#fff0f5!imp
  .checkout-page .booking-extra-card{grid-template-columns:48px minmax(0,1fr);gap:9px;padding:11px;border-radius:17px;box-shadow:4px 4px 0 #211d19}
  .checkout-page .booking-extra-image-carousel{width:48px;height:48px}
 }
+
+
+/* Responsive checkout: shared visual language, balanced desktop columns, stacked small screens. */
+.checkout-page main{display:grid;grid-template-columns:minmax(0,.88fr) minmax(0,1.12fr);column-gap:24px;align-items:start;width:100%;max-width:1180px;margin:0 auto}
+.checkout-page main>.pagehead{grid-column:1/-1;width:100%;max-width:none;margin:0;padding:clamp(32px,4vw,52px) 0 8px!important}
+.checkout-page main>.checkout-selection-panel{grid-column:1;width:100%;max-width:none;margin:0;padding:18px;border:1px solid #eadfce;border-radius:22px;background:#fff;box-shadow:0 10px 28px rgba(35,28,20,.06);align-self:start}
+.checkout-page main>.checkout-selection-panel:has(#checkout-service-summary:not([hidden])){padding:0;border:0;background:transparent;box-shadow:none}
+.checkout-page main>.checkout-selection-panel .checkout-items,.checkout-page main>.checkout-selection-panel #checkout-service-summary:not([hidden]){grid-template-columns:minmax(0,1fr);justify-items:stretch;gap:14px}
+.checkout-page main>.checkout-selection-panel .checkout-product-card,.checkout-page main>.checkout-selection-panel .checkout-service-card{width:100%;max-width:420px;min-height:190px}
+.checkout-page main>.checkout-grid{grid-column:2;width:100%!important;max-width:none!important;margin:0 0 48px}
+.checkout-page main>.checkout-grid>.checkout-form{width:100%;min-width:0;padding:clamp(20px,2.2vw,28px);border:1px solid #eadfce;border-radius:22px;background:#fff;box-shadow:0 10px 28px rgba(35,28,20,.06)}
+.checkout-page .booking-extras{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.checkout-page .booking-extra-card{border:2px solid #211d19;border-radius:18px;background:#ffd4c1;box-shadow:5px 5px 0 #211d19}
+@media(max-width:900px){
+ .checkout-page main{grid-template-columns:minmax(0,1fr);row-gap:18px;width:100%}
+ .checkout-page main>.pagehead{grid-column:1;width:calc(100% - 32px);max-width:680px;margin-inline:auto;padding:32px 0 4px!important}
+ .checkout-page main>.checkout-selection-panel,.checkout-page main>.checkout-selection-panel:has(#checkout-service-summary:not([hidden])){grid-column:1;width:calc(100% - 32px);max-width:680px;margin:0 auto;padding:16px;border:1px solid #eadfce;border-radius:20px;background:#fff;box-shadow:0 8px 24px rgba(35,28,20,.05)}
+ .checkout-page main>.checkout-grid{grid-column:1;width:calc(100% - 32px)!important;max-width:680px!important;margin:0 auto 40px}
+ .checkout-page .booking-extras{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:560px){
+ .checkout-page main{row-gap:14px}
+ .checkout-page main>.pagehead,.checkout-page main>.checkout-selection-panel,.checkout-page main>.checkout-selection-panel:has(#checkout-service-summary:not([hidden])),.checkout-page main>.checkout-grid{width:calc(100% - 24px)!important}
+ .checkout-page main>.checkout-selection-panel,.checkout-page main>.checkout-selection-panel:has(#checkout-service-summary:not([hidden])){padding:14px;border-radius:18px}
+ .checkout-page main>.checkout-grid>.checkout-form{padding:18px 15px;border-radius:18px}
+ .checkout-page .booking-extras{grid-template-columns:minmax(0,1fr);gap:11px}
+ .checkout-page .booking-extra-card{grid-template-columns:48px minmax(0,1fr);gap:9px;padding:11px;border-radius:16px;box-shadow:4px 4px 0 #211d19}
+ .checkout-page .booking-extra-image-carousel{width:48px;height:48px}
+ .checkout-page .pagehead h1{font-size:clamp(30px,8.5vw,36px)!important}
+}
