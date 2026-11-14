@@ -1897,3 +1897,26 @@ header.topbar a.header-cart:hover{color:#151515!important;background:#fff0f5!imp
 
 /* Store filter alignment: center the search toggle with its input and filter selects. */
 .store-toolbar .store-search-control>.search-toggle-button{align-self:center!important;transform:none!important}
+
+/* Store search field: remove nested borders and keep the open control clean. */
+.store-catalog-panel .store-toolbar .store-search-control>.store-search.filter-search-panel:not([hidden]){
+  display:flex!important;align-items:center!important;box-sizing:border-box!important;
+  min-width:0!important;overflow:hidden!important;padding:0 14px!important;
+  border:1.5px solid #211e1b!important;border-radius:15px!important;
+  background:#fff!important;box-shadow:none!important
+}
+.store-catalog-panel .store-toolbar .store-search-control>.store-search.filter-search-panel input[type="search"]{
+  display:block!important;flex:1 1 auto!important;box-sizing:border-box!important;
+  width:100%!important;min-width:0!important;height:100%!important;min-height:0!important;
+  margin:0!important;padding:0!important;border:0!important;border-radius:0!important;
+  outline:0!important;box-shadow:none!important;appearance:none!important;-webkit-appearance:none!important;
+  background:transparent!important;color:#211e1b!important;-webkit-text-fill-color:#211e1b!important;
+  caret-color:#211e1b!important
+}
+.store-catalog-panel .store-toolbar .store-search-control>.store-search.filter-search-panel input[type="search"]:focus-visible{
+  outline:0!important;box-shadow:none!important
+}
+.store-catalog-panel .store-toolbar .store-search-control>.store-search.filter-search-panel:focus-within{
+  outline:3px solid #f3b49d;outline-offset:2px
+}
+.store-catalog-panel .store-toolbar .store-search-control>.search-toggle-button{align-self:center!important;transform:none!important}
