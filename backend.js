@@ -87,6 +87,7 @@ async function initializeDatabase() {
       ["service_extras","sale_price","DECIMAL(10,2) NULL"],
       ["service_extras","max_quantity","SMALLINT UNSIGNED NOT NULL DEFAULT 1"],
       ["service_extras","image_url","VARCHAR(1000) NULL"],
+      ["service_extras","images_json","TEXT NULL"],
       ["booking_resources","image_url","VARCHAR(1000) NULL"],
       ["booking_resources","calendar_email","VARCHAR(254) NOT NULL DEFAULT ''"],
       ["booking_resources","google_refresh_token_enc","TEXT NULL"],
@@ -541,7 +542,8 @@ async function api(req, res, url) {
   if (req.method === "GET" && route === "/api/services") {
     if (!dbReady) return sendError(res, 503, "Appointments are being set up.");
     const [rows] = await dbPool.execute("SELECT s.id,s.name,s.description,s.duration_minutes,s.price,s.booking_mode,s.buffer_minutes,s.available_weekdays,s.start_time,s.end_time,s.min_notice_hours,s.max_advance_days,s.resource_ids,c.name AS category_name FROM services s LEFT JOIN service_categories c ON c.id=s.category_id WHERE s.active=1 ORDER BY c.name,s.created_at DESC LIMIT 100");
-    const [extras] = await dbPool.execute("SELECT id,service_id,name,description,price,sale_price,max_quantity,image_url,0 AS duration_minutes,price_per_day FROM service_extras WHERE active=1 ORDER BY service_id,name");
+    const [extras] = await dbPool.execute("SELECT id,service_id,name,description,price,sale_price,max_quantity,image_url,images_json,0 AS duration_minutes,price_per_day FROM service_extras WHERE active=1 ORDER BY service_id,name");
+    for (const extra of extras) { try { extra.images=JSON.parse(extra.images_json||"[]"); } catch (_) { extra.images=[]; } if (!extra.images.length&&extra.image_url) extra.images=[extra.image_url]; delete extra.images_json; }
     const [serviceImages] = await dbPool.execute("SELECT service_id,image_url FROM service_images ORDER BY service_id,sort_order,id");
     const [resources] = await dbPool.execute("SELECT id,resource_type,name,location,image_url FROM booking_resources WHERE active=1 ORDER BY resource_type,name");
     for (const row of rows) { row.extras = extras.filter(extra => Number(extra.service_id) === Number(row.id)); row.images=serviceImages.filter(image=>Number(image.service_id)===Number(row.id)).map(image=>image.image_url); let ids=[];try{ids=JSON.parse(row.resource_ids||"[]").map(Number)}catch(_){} row.resources=ids.map(id=>resources.find(resource=>Number(resource.id)===id)).filter(Boolean); }
@@ -969,22 +971,23 @@ async function api(req, res, url) {
       catch(error) { if(error.code==="ER_DUP_ENTRY")return sendError(res,409,"That service category already exists.");throw error; }
     }
     if (req.method === "GET" && route === "/api/admin/service-extras") {
-      const [rows]=await dbPool.query("SELECT e.id,e.service_id,e.name,e.description,e.price,e.sale_price,e.max_quantity,e.image_url,0 AS duration_minutes,e.price_per_day,e.active,s.name AS service_name FROM service_extras e JOIN services s ON s.id=e.service_id ORDER BY s.name,e.name");
+      const [rows]=await dbPool.query("SELECT e.id,e.service_id,e.name,e.description,e.price,e.sale_price,e.max_quantity,e.image_url,e.images_json,0 AS duration_minutes,e.price_per_day,e.active,s.name AS service_name FROM service_extras e JOIN services s ON s.id=e.service_id ORDER BY s.name,e.name");
+      for (const extra of rows) { try { extra.images=JSON.parse(extra.images_json||"[]"); } catch (_) { extra.images=[]; } if (!extra.images.length&&extra.image_url) extra.images=[extra.image_url]; delete extra.images_json; }
       return sendJson(res,200,{extras:rows});
     }
     if (req.method === "POST" && route === "/api/admin/service-extras") {
-      const body=await readJson(req),serviceId=Number(body.serviceId),name=cleanText(body.name,160),description=cleanText(body.description,1000),price=Number(body.price),salePrice=body.salePrice===""||body.salePrice===null||body.salePrice===undefined?null:Number(body.salePrice),maxQuantity=Number(body.maxQuantity||1),imageUrl=cleanText(body.imageUrl,1000);
-      if(!Number.isInteger(serviceId)||serviceId<1||name.length<2||!Number.isFinite(price)||price<0||(salePrice!==null&&(!Number.isFinite(salePrice)||salePrice<0||salePrice>price))||!Number.isInteger(maxQuantity)||maxQuantity<1||maxQuantity>100||(imageUrl&&!/^https:\/\//i.test(imageUrl)&&!/^\/api\/media\/\d+$/.test(imageUrl)))return sendError(res,400,"Enter a service, name, valid MRP, sale price at or below MRP, maximum quantity (1–100), and valid image.");
-      const [result]=await dbPool.execute("INSERT INTO service_extras (service_id,name,description,price,sale_price,max_quantity,image_url,duration_minutes,price_per_day) SELECT ?,?,?,?,?,?,?,0,? FROM services WHERE id=? AND active=1",[serviceId,name,description,price,salePrice,maxQuantity,imageUrl||null,body.pricePerDay?1:0,serviceId]);
+      const body=await readJson(req),serviceId=Number(body.serviceId),name=cleanText(body.name,160),description=cleanText(body.description,1000),price=Number(body.price),salePrice=body.salePrice===""||body.salePrice===null||body.salePrice===undefined?null:Number(body.salePrice),maxQuantity=Number(body.maxQuantity||1),images=Array.isArray(body.images)?body.images.map(x=>cleanText(x,1000)).filter(Boolean).slice(0,8):[cleanText(body.imageUrl,1000)].filter(Boolean),imageUrl=images[0]||"";
+      if(!Number.isInteger(serviceId)||serviceId<1||name.length<2||!Number.isFinite(price)||price<0||(salePrice!==null&&(!Number.isFinite(salePrice)||salePrice<0||salePrice>price))||!Number.isInteger(maxQuantity)||maxQuantity<1||maxQuantity>100||images.some(x=>!/^https:\/\//i.test(x)&&!/^\/api\/media\/\d+$/.test(x)))return sendError(res,400,"Enter a service, name, valid MRP, sale price at or below MRP, maximum quantity (1–100), and up to 8 valid images.");
+      const [result]=await dbPool.execute("INSERT INTO service_extras (service_id,name,description,price,sale_price,max_quantity,image_url,images_json,duration_minutes,price_per_day) SELECT ?,?,?,?,?,?,?,?,0,? FROM services WHERE id=? AND active=1",[serviceId,name,description,price,salePrice,maxQuantity,imageUrl||null,JSON.stringify(images),body.pricePerDay?1:0,serviceId]);
       if(!result.affectedRows)return sendError(res,404,"Choose an active service for this extra.");
       return sendJson(res,201,{id:result.insertId,message:"Extra added to service."});
     }
     const extraMatch=route.match(new RegExp("^\/api\/admin\/service-extras\/([0-9]+)$"));
     if(req.method==="PATCH"&&extraMatch) {
       const id=Number(extraMatch[1]),body=await readJson(req);if(typeof body.active==="boolean"){await dbPool.execute("UPDATE service_extras SET active=? WHERE id=?",[body.active?1:0,id]);return sendJson(res,200,{message:"Extra visibility updated."});}
-      const serviceId=Number(body.serviceId),name=cleanText(body.name,160),description=cleanText(body.description,1000),price=Number(body.price),salePrice=body.salePrice===""||body.salePrice===null||body.salePrice===undefined?null:Number(body.salePrice),maxQuantity=Number(body.maxQuantity||1),imageUrl=cleanText(body.imageUrl,1000);
-      if(!Number.isInteger(serviceId)||serviceId<1||name.length<2||!Number.isFinite(price)||price<0||(salePrice!==null&&(!Number.isFinite(salePrice)||salePrice<0||salePrice>price))||!Number.isInteger(maxQuantity)||maxQuantity<1||maxQuantity>100||(imageUrl&&!/^https:\/\//i.test(imageUrl)&&!/^\/api\/media\/\d+$/.test(imageUrl)))return sendError(res,400,"Enter a service, name, valid MRP, sale price at or below MRP, maximum quantity (1–100), and valid image.");
-      const [result]=await dbPool.execute("UPDATE service_extras SET service_id=?,name=?,description=?,price=?,sale_price=?,max_quantity=?,image_url=?,duration_minutes=0,price_per_day=? WHERE id=? AND EXISTS (SELECT id FROM services WHERE id=? AND active=1)",[serviceId,name,description,price,salePrice,maxQuantity,imageUrl||null,body.pricePerDay?1:0,id,serviceId]);
+      const serviceId=Number(body.serviceId),name=cleanText(body.name,160),description=cleanText(body.description,1000),price=Number(body.price),salePrice=body.salePrice===""||body.salePrice===null||body.salePrice===undefined?null:Number(body.salePrice),maxQuantity=Number(body.maxQuantity||1),images=Array.isArray(body.images)?body.images.map(x=>cleanText(x,1000)).filter(Boolean).slice(0,8):[cleanText(body.imageUrl,1000)].filter(Boolean),imageUrl=images[0]||"";
+      if(!Number.isInteger(serviceId)||serviceId<1||name.length<2||!Number.isFinite(price)||price<0||(salePrice!==null&&(!Number.isFinite(salePrice)||salePrice<0||salePrice>price))||!Number.isInteger(maxQuantity)||maxQuantity<1||maxQuantity>100||images.some(x=>!/^https:\/\//i.test(x)&&!/^\/api\/media\/\d+$/.test(x)))return sendError(res,400,"Enter a service, name, valid MRP, sale price at or below MRP, maximum quantity (1–100), and up to 8 valid images.");
+      const [result]=await dbPool.execute("UPDATE service_extras SET service_id=?,name=?,description=?,price=?,sale_price=?,max_quantity=?,image_url=?,images_json=?,duration_minutes=0,price_per_day=? WHERE id=? AND EXISTS (SELECT id FROM services WHERE id=? AND active=1)",[serviceId,name,description,price,salePrice,maxQuantity,imageUrl||null,JSON.stringify(images),body.pricePerDay?1:0,id,serviceId]);
       if(!result.affectedRows)return sendError(res,404,"Choose an active service and a valid extra.");
       return sendJson(res,200,{message:"Extra updated."});
     }
