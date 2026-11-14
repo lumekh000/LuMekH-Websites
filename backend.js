@@ -1047,6 +1047,35 @@ async function api(req, res, url) {
       const [rows] = await dbPool.query("SELECT b.id,b.starts_at,b.booking_dates_json,b.booking_extras_json,b.total_price,b.status,b.notes,b.created_at,b.customer_full_name,b.customer_phone,b.customer_address,b.customer_postal_code,COALESCE(NULLIF(b.customer_full_name,''),u.name) AS customer_name,u.email AS customer_email,s.name AS service_name,s.duration_minutes,s.booking_mode,s.price,r.name AS resource_name,r.resource_type FROM bookings b JOIN app_users u ON u.id=b.user_id JOIN services s ON s.id=b.service_id LEFT JOIN booking_resources r ON r.id=b.resource_id ORDER BY b.starts_at DESC LIMIT 300");
       return sendJson(res, 200, { bookings: rows });
     }
+    const bookingDetailRoute=route.match(/^\/api\/admin\/bookings\/(\d+)(\/pdf)?$/);
+    if(req.method==="GET"&&bookingDetailRoute){
+      const id=Number(bookingDetailRoute[1]);
+      const [[booking]]=await dbPool.execute("SELECT b.id,b.starts_at,b.booking_dates_json,b.booking_extras_json,b.total_price,b.status,b.notes,b.created_at,b.customer_full_name,b.customer_phone,b.customer_address,b.customer_city,b.customer_postal_code,COALESCE(NULLIF(b.customer_full_name,''),u.name) AS customer_name,u.email AS customer_email,s.name AS service_name,s.booking_mode,s.duration_minutes,r.name AS resource_name,r.resource_type FROM bookings b JOIN app_users u ON u.id=b.user_id JOIN services s ON s.id=b.service_id LEFT JOIN booking_resources r ON r.id=b.resource_id WHERE b.id=? LIMIT 1",[id]);
+      if(!booking)return sendError(res,404,"Booking not found.");
+      let dates=[];try{dates=JSON.parse(booking.booking_dates_json||"[]")}catch(_){}
+      let extras=[];try{extras=JSON.parse(booking.booking_extras_json||"[]")}catch(_){}
+      if(!bookingDetailRoute[2])return sendJson(res,200,{booking,dates:Array.isArray(dates)?dates:[],extras:Array.isArray(extras)?extras:[]});
+      const plain=value=>String(value??"").replace(/₹/g,"INR ").replace(/[^\x20-\x7E]/g,"").replace(/\s+/g," ").trim();
+      const wrap=(value,width=88)=>{const words=plain(value).split(" ");const lines=[];let line="";for(const word of words){if((line+" "+word).trim().length>width&&line){lines.push(line);line=word}else line=(line+" "+word).trim()}if(line)lines.push(line);return lines.length?lines:[""]};
+      const pdfLines=[["LuMekH Booking","#"+booking.id],["Requested",new Date(booking.created_at).toLocaleString("en-IN",{timeZone:"Asia/Kolkata"})],["Status",booking.status],["Customer",booking.customer_name],["Email",booking.customer_email],["Mobile",booking.customer_phone],["Address",[booking.customer_address,booking.customer_city,booking.customer_postal_code].filter(Boolean).join(", ")],["Service",booking.service_name],["Company or studio",booking.resource_name||"—"],"","Booking dates"];
+      for(const date of (Array.isArray(dates)?dates:[]))pdfLines.push(plain(date.date||date.startsAt||"")+" · "+plain(date.endDate||"")+" · "+plain(date.time||""));
+      pdfLines.push("","Optional extras");for(const extra of (Array.isArray(extras)?extras:[]))pdfLines.push(plain(extra.name)+" · Qty "+plain(extra.quantity||1)+" · INR "+Number(extra.unitPrice??extra.price??0).toFixed(2));
+      pdfLines.push("","Notes: "+plain(booking.notes||"—"),"","Booking total: INR "+Number(booking.total_price||0).toFixed(2));
+      const lines=[];for(const row of pdfLines){if(Array.isArray(row))lines.push(...wrap(row[0]+": "+row[1]));else lines.push(...wrap(row))}
+      const pages=[];for(let i=0;i<lines.length;i+=48)pages.push(lines.slice(i,i+48));
+      const objects=["","<< /Type /Catalog /Pages 2 0 R >>","","<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"],pageRefs=[];
+      for(let p=0;p<pages.length;p++){const pageObj=5+p*2,contentObj=pageObj+1;pageRefs.push(pageObj+" 0 R");let stream="BT\n/F1 10 Tf\n50 790 Td\n14 TL\n";for(const line of pages[p])stream+="("+plain(line).replace(/\\/g,"\\\\").replace(/\(/g,"\\(").replace(/\)/g,"\\)")+ ") Tj\nT*\n";stream+="ET";objects[pageObj]="<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents "+contentObj+" 0 R >>";objects[contentObj]="<< /Length "+Buffer.byteLength(stream,"ascii")+" >>\nstream\n"+stream+"\nendstream"}
+      objects[2]="<< /Type /Pages /Kids ["+pageRefs.join(" ")+"] /Count "+pages.length+" >>";
+      let pdf="%PDF-1.4\n",offsets=[0];for(let i=1;i<objects.length;i++){offsets[i]=Buffer.byteLength(pdf,"ascii");pdf+=i+" 0 obj\n"+objects[i]+"\nendobj\n"}const xref=Buffer.byteLength(pdf,"ascii");pdf+="xref\n0 "+objects.length+"\n0000000000 65535 f \n";for(let i=1;i<objects.length;i++)pdf+=String(offsets[i]).padStart(10,"0")+" 00000 n \n";pdf+="trailer\n<< /Size "+objects.length+" /Root 1 0 R >>\nstartxref\n"+xref+"\n%%EOF";
+      const buffer=Buffer.from(pdf,"ascii");res.writeHead(200,{"Content-Type":"application/pdf","Content-Disposition":"attachment; filename=\"LuMekH-booking-"+id+".pdf\"","Content-Length":buffer.length});res.end(buffer);return;
+    }
+    const deleteBookingMatch=route.match(/^\/api\/admin\/bookings\/(\d+)$/);
+    if(req.method==="DELETE"&&deleteBookingMatch){
+      const id=Number(deleteBookingMatch[1]),conn=await dbPool.getConnection();let resetBookingNumbers=false;
+      try{await conn.beginTransaction();const [[booking]]=await conn.execute("SELECT id,status FROM bookings WHERE id=? FOR UPDATE",[id]);if(!booking){await conn.rollback();return sendError(res,404,"Booking not found.")}if(booking.status!=="cancelled"){await conn.rollback();return sendError(res,409,"Only archived (cancelled) bookings can be deleted.")}await conn.execute("DELETE FROM google_calendar_events WHERE booking_id=?",[id]);await conn.execute("DELETE FROM bookings WHERE id=?",[id]);const [[remaining]]=await conn.query("SELECT COUNT(*) AS total FROM bookings");resetBookingNumbers=Number(remaining.total)===0;await conn.commit()}catch(error){await conn.rollback();throw error}finally{conn.release()}
+      if(resetBookingNumbers){try{await dbPool.query("ALTER TABLE bookings AUTO_INCREMENT = 1")}catch(error){console.error("Could not reset booking numbering after archive cleanup:",error.message)}}
+      return sendJson(res,200,{message:resetBookingNumbers?"Archived booking deleted. The next booking number will start at #1.":"Archived booking deleted."});
+    }
     const orderDetailRoute=route.match(/^\/api\/admin\/orders\/(\d+)(\/pdf)?$/);
     if(req.method==="GET"&&orderDetailRoute){
       const id=Number(orderDetailRoute[1]);
