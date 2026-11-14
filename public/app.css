@@ -1631,3 +1631,8 @@ header.topbar a.header-cart:hover{color:#151515!important;background:#fff0f5!imp
  .checkout-page .booking-extra-image-carousel{width:48px;height:48px}
  .checkout-page .pagehead h1{font-size:clamp(30px,8.5vw,36px)!important}
 }
+
+
+/* Black paper-cut frame for the complete booking details area. */
+.checkout-page #checkout-booking-fields:not([hidden]){display:grid;gap:14px;margin:0 0 24px;padding:clamp(18px,2.4vw,26px);border:2px solid #211d19;border-radius:22px;background:#fff;box-shadow:5px 5px 0 #211d19}
+@media(max-width:560px){.checkout-page #checkout-booking-fields:not([hidden]){gap:12px;padding:16px 14px;border-radius:18px;box-shadow:4px 4px 0 #211d19}}
