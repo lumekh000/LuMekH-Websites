@@ -544,7 +544,7 @@ async function api(req, res, url) {
     const [extras] = await dbPool.execute("SELECT id,service_id,name,description,price,sale_price,max_quantity,image_url,0 AS duration_minutes,price_per_day FROM service_extras WHERE active=1 ORDER BY service_id,name");
     const [serviceImages] = await dbPool.execute("SELECT service_id,image_url FROM service_images ORDER BY service_id,sort_order,id");
     const [resources] = await dbPool.execute("SELECT id,resource_type,name,location,image_url FROM booking_resources WHERE active=1 ORDER BY resource_type,name");
-    for (const row of rows) { row.extras = extras.filter(extra => Number(extra.service_id) === Number(row.id)); row.images=serviceImages.filter(image=>Number(image.service_id)===Number(row.id)).map(image=>image.image_url); let ids=[];try{ids=JSON.parse(row.resource_ids||"[]").map(Number)}catch(_){} row.resources=resources.filter(resource=>ids.includes(Number(resource.id))); }
+    for (const row of rows) { row.extras = extras.filter(extra => Number(extra.service_id) === Number(row.id)); row.images=serviceImages.filter(image=>Number(image.service_id)===Number(row.id)).map(image=>image.image_url); let ids=[];try{ids=JSON.parse(row.resource_ids||"[]").map(Number)}catch(_){} row.resources=ids.map(id=>resources.find(resource=>Number(resource.id)===id)).filter(Boolean); }
     return sendJson(res, 200, { services: rows });
   }
 
@@ -554,7 +554,7 @@ async function api(req, res, url) {
     if (session.user.role !== "customer") return sendError(res,403,"Sign in with a customer account to request a booking.");
     const body = await readJson(req);
     const serviceId = Number(body.serviceId);
-    const resourceId = Number(body.resourceId)||null;
+    let resourceId = null;
     const dates = Array.isArray(body.dates) ? [...new Set(body.dates.map(x => cleanText(x, 10)).filter(x => /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(x)))].sort() : [];
     const dateTimes = new Map((Array.isArray(body.dateTimes) ? body.dateTimes : []).filter(x => x && /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(String(x.date)) && typeof x.startsAt === "string").map(x => [x.date, x.startsAt]));
     const time = String(body.time || "09:00");
@@ -580,8 +580,13 @@ async function api(req, res, url) {
       const service = services[0];
       if (service.booking_mode === "daily" && dates.length !== 1) { await conn.rollback(); return sendError(res, 400, "Choose one event start date per booking. The event end date is calculated from the service duration."); }
       let assignedResources=[];try{assignedResources=JSON.parse(service.resource_ids||"[]").map(Number)}catch(_){}
-      if(assignedResources.length&&(!resourceId||!assignedResources.includes(resourceId))){await conn.rollback();return sendError(res,400,"Choose an available agent or studio for this service.");}
-      if(resourceId&&!assignedResources.includes(resourceId)){await conn.rollback();return sendError(res,400,"That agent or studio is not assigned to this service.");}
+      if (assignedResources.length) {
+        const marks = assignedResources.map(() => "?").join(",");
+        const [activeResources] = await conn.execute("SELECT id FROM booking_resources WHERE active=1 AND id IN (" + marks + ")", assignedResources);
+        const activeIds = new Set(activeResources.map(row => Number(row.id)));
+        resourceId = assignedResources.find(id => activeIds.has(id)) || null;
+        if (!resourceId) { await conn.rollback(); return sendError(res,400,"The company assigned to this service is no longer available. Please contact us."); }
+      }
       const durationMinutes = Number(service.duration_minutes);
       const earliest = Date.now() + Number(service.min_notice_hours || 0) * 3600000;
       const latest = Date.now() + Number(service.max_advance_days || 365) * 86400000;

@@ -1298,8 +1298,10 @@ header.topbar a.header-cart:hover{color:#151515!important;background:#fff0f5!imp
 .checkout-page .checkout-form{padding:clamp(22px,3vw,34px)}
 .checkout-page #checkout-booking-fields>h2{margin:7px 0 18px;font-size:clamp(22px,2vw,28px)}
 .checkout-page #checkout-booking-mode:not(:empty){padding:10px 13px;border-radius:14px;background:#fff7ed;color:#675344;border:1px solid #f4e3d0;font-size:13px;margin:0 0 16px}
-.checkout-page #checkout-resource-field{margin:0 0 18px}
-.checkout-page #checkout-resource-field label{font-size:12px;color:#6b625d}
+.checkout-page .checkout-assigned-company{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:0 0 18px;padding:13px 16px;border:1px solid #eee1d3;border-radius:14px;background:#fffaf4}
+.checkout-page .checkout-assigned-company[hidden]{display:none!important}
+.checkout-page .checkout-assigned-company-label{font-size:12px;color:#6b625d}
+.checkout-page .checkout-assigned-company strong{color:#171717;font-size:14px}
 .event-calendar{border:1px solid #eee1d3;border-radius:20px;background:linear-gradient(145deg,#fff 0%,#fffaf4 100%);padding:18px;margin:14px 0 20px;box-shadow:0 10px 28px rgba(54,39,25,.045)}
 .event-calendar[hidden]{display:none!important}
 .event-calendar-top{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px}
