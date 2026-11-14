@@ -1893,3 +1893,7 @@ header.topbar a.header-cart:hover{color:#151515!important;background:#fff0f5!imp
 @media(max-width:600px){
  .services-page .service-catalog-panel .services-filterbar>.service-search-control{transform:none!important}
 }
+
+
+/* Store filter alignment: center the search toggle with its input and filter selects. */
+.store-toolbar .store-search-control>.search-toggle-button{align-self:center!important;transform:none!important}
