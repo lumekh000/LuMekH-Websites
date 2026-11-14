@@ -1924,3 +1924,23 @@ header.topbar a.header-cart:hover{color:#151515!important;background:#fff0f5!imp
 /* Modern CRM booking controls and booking detail content */
 .crm-data-table .status{min-width:128px;min-height:36px;padding:7px 34px 7px 12px;border:1px solid #d8d3cb;border-radius:999px;background-color:#fff;color:#17181b;font:700 12px Manrope,sans-serif;appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2317181b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;cursor:pointer;transition:border-color .18s,box-shadow .18s}.crm-data-table .status:hover,.crm-data-table .status:focus-visible{border-color:#17181b;box-shadow:0 0 0 3px #17181b18;outline:none}.crm-data-table .status:disabled{opacity:.55;cursor:wait}.booking-detail-dates{display:grid;gap:8px;margin:0;padding:0;list-style:none}.booking-detail-dates li{padding:11px 13px;border:1px solid #eee4da;border-radius:12px;background:#fffaf5;font-size:13px}.booking-detail-notes{margin:0;padding:14px;border:1px solid #eee4da;border-radius:12px;background:#fffaf5;white-space:pre-wrap;overflow-wrap:anywhere;color:#4b4850}.crm-data-table{min-width:850px}
 @media(max-width:600px){.crm-data-table{min-width:850px}.booking-detail-dates li{font-size:12px}}
+
+/* Modern CRM order and booking status picker */
+.crm-data-table .status-control{position:relative;display:inline-flex;min-width:128px;vertical-align:middle}
+.crm-data-table .status-trigger{display:inline-flex;align-items:center;gap:9px;min-width:128px;min-height:36px;padding:7px 11px;border:1px solid #e6e0d8;border-radius:999px;background:#fff;color:#17181b;cursor:pointer;font:700 12px/1.2 'DM Sans',sans-serif;box-shadow:0 2px 7px rgba(24,20,16,.045);transition:border-color .18s,background .18s,box-shadow .18s,transform .18s}
+.crm-data-table .status-trigger:hover,.crm-data-table .status-trigger[aria-expanded=true]{border-color:#222;background:#fff;box-shadow:0 0 0 3px rgba(17,19,24,.07)}
+.crm-data-table .status-trigger:active{transform:scale(.98)}
+.crm-data-table .status-trigger:disabled{opacity:.6;cursor:wait}
+.crm-data-table .status-trigger svg{width:14px;height:14px;margin-left:auto;fill:none;stroke:currentColor;stroke-width:1.8;transition:transform .18s}
+.crm-data-table .status-trigger[aria-expanded=true] svg{transform:rotate(180deg)}
+.crm-data-table .status-dot{width:8px;height:8px;flex:none;border-radius:50%;background:#8b8d94;box-shadow:0 0 0 3px #f0f0f1}
+.crm-data-table .status-new .status-dot,.crm-data-table .status-requested .status-dot{background:#ed6b55;box-shadow:0 0 0 3px #fff0eb}
+.crm-data-table .status-processing .status-dot,.crm-data-table .status-confirmed .status-dot{background:#d19b24;box-shadow:0 0 0 3px #fff7df}
+.crm-data-table .status-completed .status-dot{background:#20a475;box-shadow:0 0 0 3px #e8f8f1}
+.crm-data-table .status-cancelled .status-dot{background:#8b8d94;box-shadow:0 0 0 3px #f0f0f1}
+.crm-data-table .status-menu{position:absolute;z-index:20;top:calc(100% + 7px);left:0;display:grid;min-width:176px;gap:3px;padding:6px;border:1px solid #e7e3dd;border-radius:14px;background:rgba(255,255,255,.98);box-shadow:0 14px 34px rgba(19,18,17,.16);backdrop-filter:blur(14px)}
+.crm-data-table .status-menu[hidden]{display:none}
+.crm-data-table .status-choice{display:flex;align-items:center;gap:10px;width:100%;min-height:36px;padding:8px 10px;border:0;border-radius:9px;background:transparent;color:#27272b;text-align:left;text-transform:capitalize;font:600 12px/1.2 'DM Sans',sans-serif;cursor:pointer;transition:background .15s,color .15s}
+.crm-data-table .status-choice:hover,.crm-data-table .status-choice:focus-visible{background:#f4f2ef;color:#111;outline:none}
+.crm-data-table .status-choice.is-selected{background:#17181b;color:#fff}
+.crm-data-table .status-choice.is-selected .status-dot{box-shadow:0 0 0 3px rgba(255,255,255,.18)}
