@@ -1488,7 +1488,7 @@ header.topbar a.header-cart:hover{color:#151515!important;background:#fff0f5!imp
 .checkout-photo-carousel.is-placeholder{display:grid;place-items:center;background:#fff;border:2px solid #211d19;color:#171717;font-weight:800}
 .checkout-product-carousel{width:74px;height:74px;border:3px solid #211d19;border-radius:50%;background:#fff;box-shadow:0 2px 0 rgba(0,0,0,.12)}
 .checkout-service-carousel{position:absolute;right:15px;top:15px;width:58px;height:58px;border:3px solid #211d19;border-radius:50%;background:#fff;box-shadow:0 2px 0 rgba(0,0,0,.12)}
-.checkout-photo-count{position:absolute;right:3px;bottom:3px;padding:2px 5px;border-radius:99px;background:rgba(20,20,20,.78);color:#fff;font-size:9px;font-weight:700}
+
 .checkout-product-kicker{display:block;margin-bottom:10px;color:#30241e;font-size:9px;font-weight:800;letter-spacing:.12em;text-transform:uppercase}
 .checkout-selection-panel .basket-line-main{display:grid;min-width:0;gap:5px;flex:1}
 .checkout-selection-panel .basket-line-main>strong{font-size:18px;line-height:1.2;color:#171717}
