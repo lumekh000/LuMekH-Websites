@@ -320,6 +320,7 @@ function googleTokenKey(){return createHash("sha256").update(String(process.env.
 function encryptGoogleToken(value){const iv=randomBytes(12),cipher=createCipheriv("aes-256-gcm",googleTokenKey(),iv),data=Buffer.concat([cipher.update(String(value),"utf8"),cipher.final()]);return Buffer.concat([iv,cipher.getAuthTag(),data]).toString("base64")}
 function decryptGoogleToken(value){const raw=Buffer.from(String(value||""),"base64"),iv=raw.subarray(0,12),tag=raw.subarray(12,28),cipher=createDecipheriv("aes-256-gcm",googleTokenKey(),iv);cipher.setAuthTag(tag);return Buffer.concat([cipher.update(raw.subarray(28)),cipher.final()]).toString("utf8")}
 async function googleAccessToken(resource){if(!resource?.google_refresh_token_enc||!process.env.GOOGLE_CLIENT_ID||!process.env.GOOGLE_CLIENT_SECRET)return null;const refreshToken=decryptGoogleToken(resource.google_refresh_token_enc),body=new URLSearchParams({client_id:process.env.GOOGLE_CLIENT_ID,client_secret:process.env.GOOGLE_CLIENT_SECRET,refresh_token:refreshToken,grant_type:"refresh_token"}),response=await fetch("https://oauth2.googleapis.com/token",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body}),data=await response.json();if(!response.ok||!data.access_token)throw Error(data.error_description||"Google Calendar authorization needs to be reconnected.");return data.access_token}
+async function googleCalendars(resource){const token=await googleAccessToken(resource);if(!token)throw Error("Connect this company to Google Calendar first.");const calendars=[];let pageToken="";for(let page=0;page<10;page++){const params=new URLSearchParams({maxResults:"250",showDeleted:"false"});if(pageToken)params.set("pageToken",pageToken);const response=await fetch("https://www.googleapis.com/calendar/v3/users/me/calendarList?"+params,{headers:{Authorization:"Bearer "+token}}),data=await response.json();if(!response.ok)throw Error(data.error?.message||"Could not load Google calendars. Reconnect Google Calendar and try again.");for(const item of data.items||[])calendars.push({id:item.id,summary:item.summary||item.id,primary:Boolean(item.primary),accessRole:item.accessRole||"reader"});pageToken=data.nextPageToken||"";if(!pageToken)break}return calendars}
 async function syncGoogleBooking(resourceId,bookingId,service,bookingDates,extras,customer){if(!resourceId)return false;try{const [[resource]]=await dbPool.execute("SELECT id,name,timezone,google_calendar_id,google_refresh_token_enc FROM booking_resources WHERE id=? AND resource_type='agent' AND active=1 LIMIT 1",[resourceId]);if(!resource?.google_refresh_token_enc)return false;const token=await googleAccessToken(resource);if(!token)return false;const dates=Array.isArray(bookingDates)?bookingDates:[];let synced=false;for(const slot of dates){const date=String(slot.date||""),daily=service.booking_mode==="daily";if(!date)continue;const duration=daily?Math.max(1,Math.ceil(Number(service.duration_minutes||1440)/1440)):0,endDate=daily?new Date(Date.parse(date+"T00:00:00Z")+duration*86400000).toISOString().slice(0,10):date,time=String(slot.time||"09:00"),startDateTime=date+"T"+time+":00",endDateTime=new Date(Date.parse(date+"T"+time+":00Z")+Number(service.duration_minutes||60)*60000).toISOString().replace(".000Z",""),event={summary:service.name+" · "+resource.name,description:"LuMekH booking #"+bookingId+"\nCustomer: "+customer.name+"\nPhone: "+customer.phone+"\nExtras: "+(extras||[]).map(x=>x.name+" × "+x.quantity).join(", "),start:daily?{date,timeZone:resource.timezone||"Asia/Kolkata"}:{dateTime:startDateTime,timeZone:resource.timezone||"Asia/Kolkata"},end:daily?{date:endDate,timeZone:resource.timezone||"Asia/Kolkata"}:{dateTime:endDateTime,timeZone:resource.timezone||"Asia/Kolkata"}};const response=await fetch("https://www.googleapis.com/calendar/v3/calendars/"+encodeURIComponent(resource.google_calendar_id||"primary")+"/events",{method:"POST",headers:{Authorization:"Bearer "+token,"Content-Type":"application/json"},body:JSON.stringify(event)}),data=await response.json();if(!response.ok||!data.id)continue;await dbPool.execute("INSERT IGNORE INTO google_calendar_events (booking_id,resource_id,google_event_id) VALUES (?,?,?)",[bookingId,resourceId,data.id]);synced=true}return synced}catch(error){console.error("Google Calendar booking sync failed:",error.message);return false}}
 async function api(req, res, url) {
   const route = url.pathname;
@@ -335,7 +336,7 @@ async function api(req, res, url) {
     try{const redirectUri=originFor(req)+"/api/google-calendar/callback",body=new URLSearchParams({code,client_id:process.env.GOOGLE_CLIENT_ID,client_secret:process.env.GOOGLE_CLIENT_SECRET,redirect_uri:redirectUri,grant_type:"authorization_code"}),response=await fetch("https://oauth2.googleapis.com/token",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body}),tokens=await response.json();if(!response.ok||!tokens.access_token)return finish(false);
       let refresh=tokens.refresh_token;if(!refresh){const [[old]]=await dbPool.execute("SELECT google_refresh_token_enc FROM booking_resources WHERE id=?",[entry.resource_id]);refresh=old?.google_refresh_token_enc?decryptGoogleToken(old.google_refresh_token_enc):"";}if(!refresh)return finish(false);
       const profileResponse=await fetch("https://openidconnect.googleapis.com/v1/userinfo",{headers:{Authorization:"Bearer "+tokens.access_token}}),profile=await profileResponse.json(),email=cleanText(profile.email,254).toLowerCase();
-      await dbPool.execute("UPDATE booking_resources SET google_refresh_token_enc=?,google_calendar_id='primary',calendar_email=? WHERE id=? AND resource_type='agent'",[tokens.refresh_token?encryptGoogleToken(refresh):encryptGoogleToken(refresh),email,entry.resource_id]);return finish(true)
+      await dbPool.execute("UPDATE booking_resources SET google_refresh_token_enc=?,google_calendar_id=COALESCE(NULLIF(google_calendar_id,''),'primary'),calendar_email=? WHERE id=? AND resource_type='agent'",[encryptGoogleToken(refresh),email,entry.resource_id]);return finish(true)
     }catch(error){console.error("Google Calendar OAuth failed:",error.message);return finish(false)}
   }
   if (req.method === "GET" && route === "/api/auth/session") return publicSession(req, res);
@@ -744,7 +745,10 @@ async function api(req, res, url) {
         if (occurrences.some(item => item.time < open || item.time >= close || (Number(item.time.slice(0,2))*60 + Number(item.time.slice(3))) + durationMinutes > Number(close.slice(0,2))*60 + Number(close.slice(3)))) { await conn.rollback(); return sendError(res, 400, "Choose a time within the service’s working hours."); }
       }
       const lockDates=[...new Set(occurrences.flatMap(item=>Array.from({length:durationDays},(_,index)=>addDays(item.date,index))))];
-      const locksNeeded = lockDates.map(date => "booking-day:" + date).sort();
+      // Serialize booking attempts for the same resource/date, while allowing
+      // separate studios/companies to accept bookings for that same date.
+      const lockScope = resourceId ? "resource-" + resourceId : "service-" + serviceId;
+      const locksNeeded = lockDates.map(date => "booking-" + lockScope + ":" + date).sort();
       for (const lockName of locksNeeded) {
         const [lock] = await conn.execute("SELECT GET_LOCK(?,5) AS acquired", [lockName]);
         if (!lock[0] || Number(lock[0].acquired) !== 1) { await conn.rollback(); return sendError(res, 409, "One of those dates is busy. Please try again."); }
@@ -759,10 +763,12 @@ async function api(req, res, url) {
       }
       const slotMinutes = durationMinutes + Number(service.buffer_minutes||0);
       if(service.booking_mode!=="daily"&&service.start_time&&service.end_time){const close=String(service.end_time).slice(0,5),closeMinutes=Number(close.slice(0,2))*60+Number(close.slice(3));if(occurrences.some(item=>Number(item.time.slice(0,2))*60+Number(item.time.slice(3))+slotMinutes>closeMinutes)){await conn.rollback();return sendError(res,400,"The service or buffer extends beyond the service closing time.");}}
-      const [existing] = await conn.execute("SELECT b.starts_at,b.resource_id,DATE_FORMAT(b.starts_at,'%Y-%m-%d') AS legacy_date,DATE_FORMAT(b.starts_at,'%H:%i') AS legacy_time,b.booking_dates_json,s.duration_minutes,s.booking_mode,s.buffer_minutes FROM bookings b JOIN services s ON s.id=b.service_id WHERE b.status IN ('requested','confirmed') AND b.starts_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 365 DAY) LIMIT 5000");
+      const [existing] = await conn.execute("SELECT b.starts_at,b.service_id,b.resource_id,DATE_FORMAT(b.starts_at,'%Y-%m-%d') AS legacy_date,DATE_FORMAT(b.starts_at,'%H:%i') AS legacy_time,b.booking_dates_json,s.duration_minutes,s.booking_mode,s.buffer_minutes FROM bookings b JOIN services s ON s.id=b.service_id WHERE b.status IN ('requested','confirmed')");
       const conflicts = occurrences.some(candidate => existing.some(row => {
         let saved; try { saved = row.booking_dates_json ? JSON.parse(row.booking_dates_json) : null; } catch (_) {}
-        if(resourceId&&row.resource_id&&Number(resourceId)!==Number(row.resource_id))return false;
+        const sameService=Number(row.service_id)===serviceId;
+        const sameResource=Boolean(resourceId&&row.resource_id&&Number(resourceId)===Number(row.resource_id));
+        if(!sameService&&!sameResource)return false;
         const slots = Array.isArray(saved) && saved.length ? saved : [{date:row.legacy_date,time:row.legacy_time}];
         return slots.some(slot => {
           const rowDays = row.booking_mode === "daily" ? Math.max(1,Math.ceil(Number(row.duration_minutes||1440)/1440)) : 1;
@@ -770,7 +776,7 @@ async function api(req, res, url) {
           if (service.booking_mode === "daily" || row.booking_mode === "daily") return candidate.date < slotEnd && candidate.endDate > slot.date;
           if (slot.date !== candidate.date) return false;
           const currentStart = candidate.startsAt.getTime();
-          const bookedStart = slot.startsAt ? new Date(slot.startsAt).getTime() : new Date(slot.date + "T" + (slot.time || "00:00") + ":00").getTime();
+          const bookedStart = slot.startsAt ? new Date(slot.startsAt).getTime() : new Date(slot.date + "T" + (slot.time || "00:00") + ":00Z").getTime();
           const bookedDuration = Number(row.duration_minutes||60) + Number(row.buffer_minutes||0);
           return currentStart < bookedStart + bookedDuration*60000 && currentStart + slotMinutes*60000 > bookedStart;
         });
@@ -781,11 +787,17 @@ async function api(req, res, url) {
       const first = occurrences[0].startsAt.toISOString().slice(0,19).replace("T"," ");
       const [result] = await conn.execute("INSERT INTO bookings (user_id,service_id,starts_at,notes,booking_dates_json,booking_extras_json,total_price,resource_id,customer_full_name,customer_phone,customer_address,customer_city,customer_postal_code) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", [session.user.id,serviceId,first,notes,JSON.stringify(bookingDates),JSON.stringify(extras.map(x=>({id:x.id,name:x.name,price:Number(x.price),salePrice:x.sale_price===null?null:Number(x.sale_price),unitPrice:Number(x.unitPrice),quantity:Number(x.quantity),maxQuantity:Number(x.max_quantity),imageUrl:x.image_url||null,durationMinutes:0,pricePerDay:Boolean(Number(x.price_per_day))}))),bookingTotal.toFixed(2),resourceId,fullName,phone,address,city,postalCode]);
       await conn.execute("UPDATE app_users SET name=?,phone=?,address=?,city=?,postal_code=? WHERE id=? AND role='customer'", [fullName,phone,address,city,postalCode,session.user.id]);
-      for (const lockName of locks) await conn.execute("SELECT RELEASE_LOCK(?)", [lockName]);
-      locks = [];
       await conn.commit();
+      // The booking is committed; release its availability locks before email
+      // and calendar integrations so slow external services do not hold slots.
+      for (const lockName of locks) { try { await conn.execute("SELECT RELEASE_LOCK(?)", [lockName]); } catch (_) {} }
+      locks = [];
       let emailSent = false;
-      if (process.env.SMTP_PASS) emailSent = await sendMail(session.user.email, "LuMekH booking request received", "<p>Your booking request for " + service.name + " covering " + bookingDates.map(x=>x.date).join(", ") + " has been received.</p><p>Estimated total: ₹" + bookingTotal.toFixed(2) + "</p>");
+      if (process.env.SMTP_PASS) {
+        try { emailSent = await sendMail(session.user.email, "LuMekH™ booking request received", "<p>Your booking request for " + service.name + " covering " + bookingDates.map(x=>x.date).join(", ") + " has been received.</p><p>Estimated total: ₹" + bookingTotal.toFixed(2) + "</p>"); }
+        catch (mailError) { console.error("Booking receipt email failed:", mailError.message); }
+      }
+      const calendarSynced = await syncGoogleBooking(resourceId, result.insertId, service, bookingDates, extras, {name:fullName,phone,email});
       return sendJson(res, 201, { message: "Booking request saved for " + bookingDates.length + (bookingDates.length === 1 ? " date." : " dates.") + (emailSent ? " A confirmation email was sent." : ""), bookingId: result.insertId, totalPrice: bookingTotal, emailSent, calendarSynced });
     } catch (error) {
       await conn.rollback();
@@ -1066,7 +1078,7 @@ async function api(req, res, url) {
       return sendJson(res,200,{message:body.active?"Product published.":"Product hidden."});
     }
     if (req.method === "GET" && route === "/api/admin/resources") {
-      const [rows]=await dbPool.query("SELECT id,resource_type,name,email,location,timezone,image_url,calendar_email,(google_refresh_token_enc IS NOT NULL) AS calendar_connected,active FROM booking_resources ORDER BY resource_type,name");
+      const [rows]=await dbPool.query("SELECT id,resource_type,name,email,location,timezone,image_url,calendar_email,google_calendar_id,(google_refresh_token_enc IS NOT NULL) AS calendar_connected,active FROM booking_resources ORDER BY resource_type,name");
       return sendJson(res,200,{resources:rows,googleCalendarConfigured:Boolean(process.env.GOOGLE_CLIENT_ID&&process.env.GOOGLE_CLIENT_SECRET)});
     }
     if (req.method === "POST" && route === "/api/admin/resources") {
@@ -1093,11 +1105,13 @@ async function api(req, res, url) {
       if(!process.env.GOOGLE_CLIENT_ID||!process.env.GOOGLE_CLIENT_SECRET)return sendError(res,503,"Google Calendar connection is not configured yet. Add Google OAuth credentials in Hostinger first.");
       const id=Number(calendarConnect[1]),[[resource]]=await dbPool.execute("SELECT id FROM booking_resources WHERE id=? AND resource_type='agent' AND active=1 LIMIT 1",[id]);if(!resource)return sendError(res,404,"That company is not active.");
       const state=randomBytes(32).toString("hex");await dbPool.execute("INSERT INTO google_calendar_oauth_states (state_hash,resource_id,user_id,expires_at) VALUES (?,?,?,DATE_ADD(UTC_TIMESTAMP(),INTERVAL 10 MINUTE))",[hashToken(state),id,session.user.id]);
-      const redirectUri=originFor(req)+"/api/google-calendar/callback",params=new URLSearchParams({client_id:process.env.GOOGLE_CLIENT_ID,redirect_uri:redirectUri,response_type:"code",scope:"openid email https://www.googleapis.com/auth/calendar.events",access_type:"offline",prompt:"consent",state,include_granted_scopes:"true"});res.writeHead(302,{Location:"https://accounts.google.com/o/oauth2/v2/auth?"+params.toString(),"Cache-Control":"no-store"});return res.end();
+      const redirectUri=originFor(req)+"/api/google-calendar/callback",params=new URLSearchParams({client_id:process.env.GOOGLE_CLIENT_ID,redirect_uri:redirectUri,response_type:"code",scope:"openid email https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.calendarlist.readonly",access_type:"offline",prompt:"consent",state,include_granted_scopes:"true"});res.writeHead(302,{Location:"https://accounts.google.com/o/oauth2/v2/auth?"+params.toString(),"Cache-Control":"no-store"});return res.end();
     }
     if(req.method==="POST"&&calendarConnect){
       const body=await readJson(req);if(body.action!=="disconnect")return sendError(res,400,"Choose a calendar action.");await dbPool.execute("UPDATE booking_resources SET google_refresh_token_enc=NULL,calendar_email='' WHERE id=?",[Number(calendarConnect[1])]);return sendJson(res,200,{message:"Company calendar disconnected."});
     }
+    const calendarResource=route.match(/^\/api\/admin\/resources\/(\d+)\/calendar\/(list|select)$/);
+    if(calendarResource){const id=Number(calendarResource[1]),[[resource]]=await dbPool.execute("SELECT id,google_calendar_id,google_refresh_token_enc FROM booking_resources WHERE id=? AND resource_type='agent' AND active=1 LIMIT 1",[id]);if(!resource?.google_refresh_token_enc)return sendError(res,409,"Connect this company to Google Calendar first.");if(req.method==="GET"&&calendarResource[2]==="list"){try{return sendJson(res,200,{calendars:await googleCalendars(resource),selectedCalendarId:resource.google_calendar_id||"primary"})}catch(error){return sendError(res,502,error.message)}}if(req.method==="POST"&&calendarResource[2]==="select"){const body=await readJson(req),calendarId=cleanText(body.calendarId,500);if(!calendarId)return sendError(res,400,"Choose a Google Calendar.");try{const calendars=await googleCalendars(resource),selected=calendars.find(item=>item.id===calendarId);if(!selected)return sendError(res,400,"That calendar is not available to this Google account.");if(!["owner","writer"].includes(selected.accessRole))return sendError(res,403,"This Google account can view that calendar but cannot add bookings to it.");await dbPool.execute("UPDATE booking_resources SET google_calendar_id=? WHERE id=?",[selected.id,id]);return sendJson(res,200,{message:"Company calendar saved.",calendarId:selected.id,calendarName:selected.summary})}catch(error){return sendError(res,502,error.message)}}}
     if (req.method === "GET" && route === "/api/admin/service-categories") {
       const [rows] = await dbPool.query("SELECT id,name,description,active FROM service_categories ORDER BY name");
       return sendJson(res,200,{categories:rows});
