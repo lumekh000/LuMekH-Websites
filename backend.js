@@ -1122,6 +1122,21 @@ async function api(req, res, url) {
       try { const [result]=await dbPool.execute("INSERT INTO service_categories (name,description) VALUES (?,?)",[name,description]);return sendJson(res,201,{id:result.insertId,message:"Category added."}); }
       catch(error) { if(error.code==="ER_DUP_ENTRY")return sendError(res,409,"That service category already exists.");throw error; }
     }
+    const serviceCategoryMatch=route.match(/^\/api\/admin\/service-categories\/(\d+)$/);
+    if(serviceCategoryMatch && req.method==="PATCH"){
+      const id=Number(serviceCategoryMatch[1]),body=await readJson(req),name=cleanText(body.name,120),description=cleanText(body.description,1000);
+      if(name.length<2)return sendError(res,400,"Enter a category name.");
+      const [[found]]=await dbPool.execute("SELECT id FROM service_categories WHERE id=?",[id]);
+      if(!found)return sendError(res,404,"Category not found.");
+      try{await dbPool.execute("UPDATE service_categories SET name=?,description=? WHERE id=?",[name,description,id]);return sendJson(res,200,{message:"Category updated."});}
+      catch(error){if(error.code==="ER_DUP_ENTRY")return sendError(res,409,"That service category already exists.");throw error;}
+    }
+    if(serviceCategoryMatch && req.method==="DELETE"){
+      const id=Number(serviceCategoryMatch[1]);
+      const [result]=await dbPool.execute("DELETE FROM service_categories WHERE id=? AND NOT EXISTS (SELECT 1 FROM services WHERE category_id=?)",[id,id]);
+      if(!result.affectedRows){const [[found]]=await dbPool.execute("SELECT id FROM service_categories WHERE id=?",[id]);return sendError(res,found?409:404,found?"This category is used by a service. Change the service category before deleting it.":"Category not found.");}
+      return sendJson(res,200,{message:"Category deleted."});
+    }
     if (req.method === "GET" && route === "/api/admin/service-extras") {
       const [rows]=await dbPool.query("SELECT e.id,e.service_id,e.name,e.description,e.price,e.sale_price,e.max_quantity,e.image_url,e.images_json,0 AS duration_minutes,e.price_per_day,e.active,s.name AS service_name FROM service_extras e JOIN services s ON s.id=e.service_id ORDER BY s.name,e.name");
       for (const extra of rows) { try { extra.images=JSON.parse(extra.images_json||"[]"); } catch (_) { extra.images=[]; } if (!extra.images.length&&extra.image_url) extra.images=[extra.image_url]; delete extra.images_json; }
