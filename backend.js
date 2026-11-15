@@ -592,6 +592,102 @@ async function api(req, res, url) {
     return sendJson(res, 200, { services: rows });
   }
 
+  if (req.method === "GET" && route === "/api/booking-availability") {
+    if (!dbReady) return sendError(res, 503, "Booking availability is loading.");
+    const serviceId=Number(url.searchParams.get("serviceId"));
+    const from=String(url.searchParams.get("from")||""),to=String(url.searchParams.get("to")||"");
+    const date=String(url.searchParams.get("date")||""),startsAtValue=String(url.searchParams.get("startsAt")||""),includeSlots=url.searchParams.get("includeSlots")==="1";
+    const validDate=value=>/^\d{4}-\d{2}-\d{2}$/.test(value)&&!Number.isNaN(Date.parse(value+"T00:00:00Z"))&&new Date(value+"T00:00:00Z").toISOString().slice(0,10)===value;
+    if(!Number.isInteger(serviceId)||serviceId<1)return sendError(res,400,"Choose a valid service.");
+    if((from||to)&&(!validDate(from)||!validDate(to)||to<from||(Date.parse(to+"T00:00:00Z")-Date.parse(from+"T00:00:00Z"))/86400000>62))return sendError(res,400,"Choose a valid availability date range.");
+    if(date&&!validDate(date))return sendError(res,400,"Choose a valid booking date.");
+    const [services]=await dbPool.execute("SELECT id,duration_minutes,booking_mode,buffer_minutes,resource_ids,start_time,end_time,available_weekdays,min_notice_hours,max_advance_days FROM services WHERE id=? AND active=1 LIMIT 1",[serviceId]);
+    if(!services.length)return sendError(res,404,"That service is not available.");
+    const service=services[0];let resourceId=null,assigned=[];
+    try{assigned=JSON.parse(service.resource_ids||"[]").map(Number)}catch(_){}
+    if(assigned.length){const marks=assigned.map(()=>"?").join(",");const [active]=await dbPool.execute("SELECT id FROM booking_resources WHERE active=1 AND id IN ("+marks+")",assigned);const activeIds=new Set(active.map(row=>Number(row.id)));resourceId=assigned.find(id=>activeIds.has(id))||null;if(!resourceId)return sendError(res,400,"The company assigned to this service is no longer available.")}
+    const [rows]=await dbPool.execute("SELECT b.starts_at,b.service_id,b.resource_id,DATE_FORMAT(b.starts_at,'%Y-%m-%d') AS legacy_date,DATE_FORMAT(b.starts_at,'%H:%i') AS legacy_time,b.booking_dates_json,s.duration_minutes,s.booking_mode,s.buffer_minutes FROM bookings b JOIN services s ON s.id=b.service_id WHERE b.status IN ('requested','confirmed')");
+    const addDays=(value,days)=>new Date(Date.parse(value+"T00:00:00Z")+days*86400000).toISOString().slice(0,10);
+    const durationDays=service.booking_mode==="daily"?Math.max(1,Math.ceil(Number(service.duration_minutes||1440)/1440)):1;
+    const settingsRows=await dbPool.execute("SELECT setting_key,setting_value FROM booking_settings WHERE setting_key IN ('timezone','slot_interval_minutes')");
+    const settings=Object.fromEntries((settingsRows[0]||[]).map(row=>[row.setting_key,row.setting_value]));
+    const interval=Math.min(240,Math.max(5,Number(settings.slot_interval_minutes||30)));
+    const toZonedIso=(day,clock,timezone)=>{
+      const [year,month,dayOfMonth]=day.split("-").map(Number),[hour,minute]=clock.split(":").map(Number),target=Date.UTC(year,month-1,dayOfMonth,hour,minute);
+      let instant=target;
+      for(let i=0;i<3;i++){
+        const parts=new Intl.DateTimeFormat("en-GB",{timeZone:timezone||"Asia/Kolkata",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).formatToParts(new Date(instant)),values=Object.fromEntries(parts.map(part=>[part.type,part.value]));
+        instant+=target-Date.UTC(Number(values.year),Number(values.month)-1,Number(values.day),Number(values.hour),Number(values.minute));
+      }
+      return new Date(instant);
+    };
+    const timezone=settings.timezone||"Asia/Kolkata";
+    const weekdays=String(service.available_weekdays||"0,1,2,3,4,5,6").split(",").map(Number);
+    const clock=value=>value?String(value).slice(0,5):"";
+    const open=clock(service.start_time),close=clock(service.end_time);
+    const withinBookingWindow=startsAt=>{
+      const value=startsAt instanceof Date?startsAt.getTime():new Date(startsAt).getTime();
+      return Number.isFinite(value)&&value>=Date.now()+Number(service.min_notice_hours||0)*3600000&&value<=Date.now()+Number(service.max_advance_days||365)*86400000;
+    };
+    const serviceDateAllowed=(day,time=null)=>{
+      const weekday=new Date(day+"T12:00:00Z").getUTCDay();
+      if(!weekdays.includes(weekday))return false;
+      if(service.booking_mode!=="daily"&&open&&close){
+        if(!time)return true;
+        const duration=Number(service.duration_minutes||60)+Number(service.buffer_minutes||0);
+        const start=Number(time.slice(0,2))*60+Number(time.slice(3));
+        const end=Number(close.slice(0,2))*60+Number(close.slice(3));
+        if(time<open||time>=close||start+duration>end)return false;
+      }
+      return true;
+    };
+    const conflicts=(candidate)=>rows.some(row=>{
+      const sameService=Number(row.service_id)===serviceId;
+      const sameResource=Boolean(resourceId&&row.resource_id&&Number(resourceId)===Number(row.resource_id));
+      if(!sameService&&!sameResource)return false;
+      let saved;try{saved=row.booking_dates_json?JSON.parse(row.booking_dates_json):null}catch(_){}
+      const slots=Array.isArray(saved)&&saved.length?saved:[{date:row.legacy_date,time:row.legacy_time}];
+      return slots.some(slot=>{
+        if(!slot?.date)return false;
+        const rowDays=row.booking_mode==="daily"?Math.max(1,Math.ceil(Number(row.duration_minutes||1440)/1440)):1;
+        const slotEnd=slot.endDate||addDays(slot.date,rowDays);
+        if(service.booking_mode==="daily"||row.booking_mode==="daily")return candidate.date<slotEnd&&candidate.endDate>slot.date;
+        if(slot.date!==candidate.date||!candidate.startsAt)return false;
+        const bookedStart=slot.startsAt?new Date(slot.startsAt).getTime():new Date(slot.date+"T"+(slot.time||"00:00")+":00Z").getTime();
+        const currentStart=new Date(candidate.startsAt).getTime();
+        if(!Number.isFinite(bookedStart)||!Number.isFinite(currentStart))return false;
+        const bookedMinutes=Number(row.duration_minutes||60)+Number(row.buffer_minutes||0),currentMinutes=Number(service.duration_minutes||60)+Number(service.buffer_minutes||0);
+        return currentStart<bookedStart+bookedMinutes*60000&&currentStart+currentMinutes*60000>bookedStart;
+      });
+    });
+    const unavailableDates=[];
+    if(from&&to){
+      for(let cursor=from;cursor<=to;cursor=addDays(cursor,1)){
+        if(service.booking_mode==="daily"&&(!serviceDateAllowed(cursor)||!withinBookingWindow(toZonedIso(cursor,"00:00",timezone))||conflicts({date:cursor,endDate:addDays(cursor,durationDays)})))unavailableDates.push(cursor);
+      }
+    }
+    if(date&&startsAtValue&&!Number.isFinite(new Date(startsAtValue).getTime()))return sendError(res,400,"Choose a valid booking time.");
+    let isAvailable=true;
+    if(date){
+      const start=startsAtValue?new Date(startsAtValue):toZonedIso(date,service.booking_mode==="daily"?"00:00":(open||"00:00"),timezone);
+      const localTime=startsAtValue?new Intl.DateTimeFormat("en-GB",{timeZone:timezone,hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).format(start):null;
+      isAvailable=serviceDateAllowed(date,localTime)&&withinBookingWindow(start)&&!conflicts({date,endDate:addDays(date,durationDays),startsAt:startsAtValue?start:null});
+    }
+    let availableSlots;
+    if(includeSlots&&date&&service.booking_mode!=="daily"){
+      availableSlots=[];
+      const weekday=new Date(date+"T12:00:00Z").getUTCDay();
+      if(weekdays.includes(weekday)&&open&&close){
+        const openMinutes=Number(open.slice(0,2))*60+Number(open.slice(3)),closeMinutes=Number(close.slice(0,2))*60+Number(close.slice(3)),needed=Number(service.duration_minutes||60)+Number(service.buffer_minutes||0);
+        for(let minute=openMinutes;minute+needed<=closeMinutes&&availableSlots.length<240;minute+=interval){
+          const time=String(Math.floor(minute/60)).padStart(2,"0")+":"+String(minute%60).padStart(2,"0"),startsAt=toZonedIso(date,time,settings.timezone);
+          availableSlots.push({time,available:withinBookingWindow(startsAt)&&serviceDateAllowed(date,time)&&!conflicts({date,endDate:addDays(date,1),startsAt})});
+        }
+      }
+    }
+    return sendJson(res,200,{serviceId,unavailableDates,isAvailable,availableSlots,reason:isAvailable?null:"That date or time is already booked."});
+  }
+
   if (req.method === "POST" && route === "/api/bookings") {
     const session = await requireSession(req, res);
     if (!session) return;
