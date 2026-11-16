@@ -2278,3 +2278,10 @@ body.booking-success-open{overflow:hidden}
 .store-catalog-panel .store-toolbar .store-filter select{position:relative;z-index:2;min-height:48px!important;height:48px!important;cursor:pointer;touch-action:manipulation;transition:border-color .12s ease,box-shadow .12s ease,background-color .12s ease}
 .store-catalog-panel .store-toolbar .store-filter select:focus-visible,.store-catalog-panel .store-toolbar .store-filter select.is-pressed{outline:3px solid rgba(239,82,58,.28)!important;outline-offset:2px;border-color:#ef523a!important;box-shadow:0 0 0 1px #ef523a!important}
 .store-catalog-panel .store-toolbar .store-filter select.is-selected{border-color:#ef523a!important;background-color:#fff5ef!important}
+
+
+/* Keep the added price sort aligned with both catalog filter bars. */
+.store-catalog-panel .store-toolbar,.services-filterbar{grid-template-columns:48px repeat(3,minmax(140px,200px))!important;justify-content:start!important}
+.store-catalog-panel .store-toolbar .store-filter,.services-filterbar .service-category{min-width:0}
+@media(max-width:900px){.store-catalog-panel .store-toolbar,.services-filterbar{grid-template-columns:48px repeat(3,minmax(0,1fr))!important}}
+@media(max-width:600px){.store-catalog-panel .store-toolbar,.services-filterbar{grid-template-columns:48px repeat(2,minmax(0,1fr))!important}.store-catalog-panel .store-toolbar .store-filter:last-child,.services-filterbar .service-category:last-child{grid-column:2!important}}
