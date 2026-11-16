@@ -2260,3 +2260,15 @@ body.booking-success-open{overflow:hidden}
  .checkout-page main>.checkout-selection-panel .checkout-service-card-copy{min-width:0;overflow-wrap:anywhere}
  .checkout-page main>.checkout-selection-panel .checkout-service-card-copy h3{max-width:100%;overflow-wrap:anywhere}
 }
+
+
+/* Accessible tap-to-zoom image viewer shared across the shopping UI. */
+:is(.store-product-media,.checkout-photo-carousel,.booking-extra-image-carousel,.product-detail-gallery){cursor:zoom-in}
+.image-lightbox{position:fixed;inset:0;box-sizing:border-box;width:min(94vw,1080px);height:min(92vh,860px);height:min(92dvh,860px);max-width:none;max-height:none;margin:auto;padding:54px 18px 14px;border:2px solid #211d19;border-radius:22px;background:#fffdf8;color:#211d19;box-shadow:7px 7px 0 #211d19;grid-template-rows:minmax(0,1fr) auto;gap:8px}
+.image-lightbox[open]{display:grid}
+.image-lightbox::backdrop{background:rgba(15,13,12,.78);backdrop-filter:blur(4px)}
+.image-lightbox-photo{display:block;width:100%;height:100%;min-height:0;object-fit:contain;border-radius:12px}
+.image-lightbox-caption{margin:0;color:#615a54;font-size:13px;font-weight:700;text-align:center}
+.image-lightbox-close{position:absolute;top:10px;right:10px;width:38px;height:38px;border:1.5px solid #211d19;border-radius:50%;background:#fff;color:#211d19;font:700 25px/1 Manrope,sans-serif;cursor:pointer}
+.image-lightbox-close:hover,.image-lightbox-close:focus-visible{background:#171513;color:#fff;outline:2px solid #ef523a;outline-offset:2px}
+@media(max-width:560px){.image-lightbox{width:calc(100vw - 24px);height:88vh;height:88dvh;padding:52px 10px 12px;border-radius:17px}.image-lightbox-photo{border-radius:9px}}
