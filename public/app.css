@@ -2233,3 +2233,6 @@ body.booking-success-open{overflow:hidden}
 /* Keep the open variant picker above neighboring cards. */
 .store-catalog-panel .store-product-card{overflow:visible!important}
 .store-catalog-panel .store-product-card:has(.store-option-trigger[aria-expanded="true"]){z-index:100!important;overflow:visible!important}
+
+/* Keep filter-hidden store cards out of the catalog layout. */
+.store-catalog-panel .store-product-card[hidden]{display:none!important}
