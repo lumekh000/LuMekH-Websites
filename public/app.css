@@ -2236,3 +2236,5 @@ body.booking-success-open{overflow:hidden}
 
 /* Keep filter-hidden store cards out of the catalog layout. */
 .store-catalog-panel .store-product-card[hidden]{display:none!important}
+
+.checkout-variant-picker{display:grid;gap:6px;margin:10px 0;max-width:240px;font-size:12px;font-weight:700}.checkout-variant-picker select{width:100%;min-height:40px;padding:8px 10px;border:1px solid #211d19;border-radius:10px;background:#fff;color:#211d19;font:inherit;font-size:13px}.checkout-variant-picker select:focus-visible{outline:3px solid rgba(117,95,244,.35);outline-offset:2px}
