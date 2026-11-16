@@ -205,3 +205,16 @@ function setupMobileSiteHeader(){
     }
   });
 }
+
+
+/* Shared product image viewer for store, checkout, and booking extras. */
+(()=>{
+ const hostSelector='.store-product-media, .checkout-photo-carousel, .booking-extra-image-carousel, .product-detail-gallery';
+ const enhance=root=>{if(!root)return;const hosts=[];if(root.matches?.(hostSelector))hosts.push(root);root.querySelectorAll?.(hostSelector).forEach(host=>hosts.push(host));for(const host of hosts){if(!host.querySelector('img'))continue;host.tabIndex=0;host.setAttribute('role','button');host.setAttribute('aria-haspopup','dialog');if(!host.hasAttribute('aria-label'))host.setAttribute('aria-label','Open product image');host.setAttribute('title','Tap to view image');}};
+ let viewer=null,lastFocus=null;
+ const open=(host)=>{const photo=host.querySelector('img.is-active')||host.querySelector('img');if(!photo)return;lastFocus=host;if(!viewer){viewer=document.createElement('dialog');viewer.className='image-lightbox';viewer.setAttribute('aria-label','Product image preview');const close=document.createElement('button');close.type='button';close.className='image-lightbox-close';close.setAttribute('aria-label','Close image');close.textContent='×';const large=document.createElement('img');large.className='image-lightbox-photo';const caption=document.createElement('p');caption.className='image-lightbox-caption';viewer.append(close,large,caption);close.addEventListener('click',()=>viewer.close());viewer.addEventListener('click',event=>{if(event.target===viewer)viewer.close()});viewer.addEventListener('close',()=>{lastFocus?.focus?.()});document.body.append(viewer);}const large=viewer.querySelector('.image-lightbox-photo');large.src=photo.currentSrc||photo.src;large.alt=photo.alt||'Product image';viewer.querySelector('.image-lightbox-caption').textContent=photo.alt||'Product image';if(!viewer.open)viewer.showModal();viewer.querySelector('.image-lightbox-close').focus();};
+ enhance(document);
+ new MutationObserver(records=>records.forEach(record=>record.addedNodes.forEach(node=>{if(node.nodeType===1)enhance(node)}))).observe(document.body,{childList:true,subtree:true});
+ document.addEventListener('click',event=>{const host=event.target.closest(hostSelector);if(!host||!host.querySelector('img'))return;event.preventDefault();event.stopPropagation();open(host)},true);
+ document.addEventListener('keydown',event=>{if(event.key!=='Enter'&&event.key!==' ')return;const host=event.target.closest?.(hostSelector);if(!host||!host.querySelector('img'))return;event.preventDefault();event.stopPropagation();open(host)},true);
+})();
