@@ -6,6 +6,13 @@ const { promisify } = require("node:util");
 const zlib = require("node:zlib");
 const mysql = require("mysql2/promise");
 const nodemailer = require("nodemailer");
+const dns = require("node:dns").promises;
+const https = require("node:https");
+const { McpServer } = require("@modelcontextprotocol/sdk/server/mcp.js");
+const { StreamableHTTPServerTransport } = require("@modelcontextprotocol/sdk/server/streamableHttp.js");
+const { z } = require("zod");
+const { createApiKey, hashApiKey, verifyApiKey } = require("./integrations/security");
+const { WEBHOOK_EVENTS, isPublicAddress, parseWebhookUrl, validateWebhookEvents, signWebhook } = require("./integrations/webhooks");
 
 const scryptAsync = promisify(scrypt);
 const publicDir = path.join(__dirname, "public");
@@ -38,6 +45,9 @@ const dbPool = dbConfigured ? mysql.createPool({
 let dbReady = false;
 const loginAttempts = new Map();
 const MAX_LOGIN_ATTEMPT_KEYS = 10000;
+const mcpRateLimits = new Map();
+let webhookWorkerTimer = null;
+let webhookWorkerBusy = false;
 
 function decodePngRgba(input) {
   if (!Buffer.isBuffer(input) || input.length < 33 || input.toString("ascii", 1, 4) !== "PNG") return null;
@@ -100,6 +110,9 @@ const schema = [
   "CREATE TABLE IF NOT EXISTS product_reviews (id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, product_id BIGINT UNSIGNED NOT NULL, user_id BIGINT UNSIGNED NOT NULL, rating TINYINT UNSIGNED NOT NULL, title VARCHAR(160) NOT NULL DEFAULT '', body VARCHAR(2000) NOT NULL DEFAULT '', status ENUM('pending','approved','rejected') NOT NULL DEFAULT 'pending', created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE KEY uq_review_user_product (product_id,user_id), INDEX idx_review_product (product_id,status), CONSTRAINT fk_review_product FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE, CONSTRAINT fk_review_user FOREIGN KEY (user_id) REFERENCES app_users(id) ON DELETE CASCADE) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
   "CREATE TABLE IF NOT EXISTS store_settings (setting_key VARCHAR(80) NOT NULL PRIMARY KEY, setting_value TEXT NOT NULL, updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
   "CREATE TABLE IF NOT EXISTS stock_logs (id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, product_id BIGINT UNSIGNED NOT NULL, delta INT NOT NULL, reason VARCHAR(160) NOT NULL, user_id BIGINT UNSIGNED NULL, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, INDEX idx_stock_product (product_id,created_at), CONSTRAINT fk_stock_product FOREIGN KEY (product_id) REFERENCES products(id), CONSTRAINT fk_stock_user FOREIGN KEY (user_id) REFERENCES app_users(id) ON DELETE SET NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+  "CREATE TABLE IF NOT EXISTS mcp_api_keys (id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, name VARCHAR(100) NOT NULL, token_hash CHAR(64) NOT NULL UNIQUE, active TINYINT(1) NOT NULL DEFAULT 1, last_used_at DATETIME NULL, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, INDEX idx_mcp_keys_active (active,created_at)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+  "CREATE TABLE IF NOT EXISTS webhook_endpoints (id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, name VARCHAR(100) NOT NULL, endpoint_url VARCHAR(2048) NOT NULL, events_json TEXT NOT NULL, secret_enc TEXT NOT NULL, active TINYINT(1) NOT NULL DEFAULT 1, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, INDEX idx_webhook_endpoints_active (active,created_at)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+  "CREATE TABLE IF NOT EXISTS webhook_deliveries (id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, endpoint_id BIGINT UNSIGNED NOT NULL, event_type VARCHAR(80) NOT NULL, payload_json MEDIUMTEXT NOT NULL, status ENUM('pending','delivering','delivered','failed') NOT NULL DEFAULT 'pending', attempts TINYINT UNSIGNED NOT NULL DEFAULT 0, response_status SMALLINT UNSIGNED NULL, next_attempt_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, delivered_at DATETIME NULL, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, INDEX idx_webhook_due (status,next_attempt_at), INDEX idx_webhook_endpoint_history (endpoint_id,created_at), CONSTRAINT fk_webhook_delivery_endpoint FOREIGN KEY (endpoint_id) REFERENCES webhook_endpoints(id) ON DELETE CASCADE) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
 ];
 
 async function initializeDatabase() {
@@ -181,6 +194,7 @@ async function initializeDatabase() {
       await dbPool.execute("INSERT INTO app_users (name,email,password_hash,role,email_verified) VALUES (?,?,?,'admin',1)",["LuMekH Admin",adminEmail,bootstrapHash]);
     }
     dbReady = true;
+    startWebhookWorker();
     console.log("LuMekH database is ready.");
   } catch (error) {
     dbReady = false;
@@ -335,6 +349,100 @@ function decryptGoogleToken(value){const raw=Buffer.from(String(value||""),"base
 async function googleAccessToken(resource){if(!resource?.google_refresh_token_enc||!process.env.GOOGLE_CLIENT_ID||!process.env.GOOGLE_CLIENT_SECRET)return null;const refreshToken=decryptGoogleToken(resource.google_refresh_token_enc),body=new URLSearchParams({client_id:process.env.GOOGLE_CLIENT_ID,client_secret:process.env.GOOGLE_CLIENT_SECRET,refresh_token:refreshToken,grant_type:"refresh_token"}),response=await fetch("https://oauth2.googleapis.com/token",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body}),data=await response.json();if(!response.ok||!data.access_token)throw Error(data.error_description||"Google Calendar authorization needs to be reconnected.");return data.access_token}
 async function googleCalendars(resource){const token=await googleAccessToken(resource);if(!token)throw Error("Connect this company to Google Calendar first.");const calendars=[];let pageToken="";for(let page=0;page<10;page++){const params=new URLSearchParams({maxResults:"250",showDeleted:"false"});if(pageToken)params.set("pageToken",pageToken);const response=await fetch("https://www.googleapis.com/calendar/v3/users/me/calendarList?"+params,{headers:{Authorization:"Bearer "+token}}),data=await response.json();if(!response.ok)throw Error(data.error?.message||"Could not load Google calendars. Reconnect Google Calendar and try again.");for(const item of data.items||[])calendars.push({id:item.id,summary:item.summary||item.id,primary:Boolean(item.primary),accessRole:item.accessRole||"reader"});pageToken=data.nextPageToken||"";if(!pageToken)break}return calendars}
 async function syncGoogleBooking(resourceId,bookingId,service,bookingDates,extras,customer){if(!resourceId)return false;try{const [[resource]]=await dbPool.execute("SELECT id,name,timezone,google_calendar_id,google_refresh_token_enc FROM booking_resources WHERE id=? AND resource_type='agent' AND active=1 LIMIT 1",[resourceId]);if(!resource?.google_refresh_token_enc)return false;const token=await googleAccessToken(resource);if(!token)return false;const dates=Array.isArray(bookingDates)?bookingDates:[];let synced=false;for(const slot of dates){const date=String(slot.date||""),daily=service.booking_mode==="daily";if(!date)continue;const duration=daily?Math.max(1,Math.ceil(Number(service.duration_minutes||1440)/1440)):0,endDate=daily?new Date(Date.parse(date+"T00:00:00Z")+duration*86400000).toISOString().slice(0,10):date,time=String(slot.time||"09:00"),startDateTime=date+"T"+time+":00",endDateTime=new Date(Date.parse(date+"T"+time+":00Z")+Number(service.duration_minutes||60)*60000).toISOString().replace(".000Z",""),event={summary:service.name+" · "+resource.name,description:"LuMekH booking #"+bookingId+"\nCustomer: "+customer.name+"\nPhone: "+customer.phone+"\nExtras: "+(extras||[]).map(x=>x.name+" × "+x.quantity).join(", "),start:daily?{date,timeZone:resource.timezone||"Asia/Kolkata"}:{dateTime:startDateTime,timeZone:resource.timezone||"Asia/Kolkata"},end:daily?{date:endDate,timeZone:resource.timezone||"Asia/Kolkata"}:{dateTime:endDateTime,timeZone:resource.timezone||"Asia/Kolkata"}};const response=await fetch("https://www.googleapis.com/calendar/v3/calendars/"+encodeURIComponent(resource.google_calendar_id||"primary")+"/events",{method:"POST",headers:{Authorization:"Bearer "+token,"Content-Type":"application/json"},body:JSON.stringify(event)}),data=await response.json();if(!response.ok||!data.id)continue;await dbPool.execute("INSERT IGNORE INTO google_calendar_events (booking_id,resource_id,google_event_id) VALUES (?,?,?)",[bookingId,resourceId,data.id]);synced=true}return synced}catch(error){console.error("Google Calendar booking sync failed:",error.message);return false}}
+async function authenticateMcpKey(req) {
+  const match=String(req.headers.authorization||"").match(/^Bearer\s+(lmh_[A-Za-z0-9_-]{43})$/);
+  if(!match||!dbReady)return null;
+  const token=match[1],tokenHash=hashApiKey(token);
+  const [rows]=await dbPool.execute("SELECT id,token_hash FROM mcp_api_keys WHERE token_hash=? AND active=1 LIMIT 1",[tokenHash]);
+  if(!rows.length||!verifyApiKey(token,rows[0].token_hash))return null;
+  const now=Date.now(),entry=mcpRateLimits.get(tokenHash);
+  if(!entry||now-entry.started>=60000){if(mcpRateLimits.size>=2000)mcpRateLimits.delete(mcpRateLimits.keys().next().value);mcpRateLimits.set(tokenHash,{started:now,count:1})}
+  else if(++entry.count>120)return {rateLimited:true};
+  await dbPool.execute("UPDATE mcp_api_keys SET last_used_at=UTC_TIMESTAMP() WHERE id=?",[rows[0].id]);
+  return {id:rows[0].id};
+}
+function registerMcpCatalogTools(server) {
+  server.registerTool("list_products",{title:"List LuMekH products",description:"Search the public product catalog. Returns active products and starting prices only.",inputSchema:{query:z.string().trim().max(100).optional(),limit:z.number().int().min(1).max(48).optional()}},async({query="",limit=20})=>{
+    if(!dbReady)return {isError:true,content:[{type:"text",text:"The public catalog is temporarily unavailable."}]};
+    const q=cleanText(query,100),like="%"+q+"%";
+    const [rows]=await dbPool.execute("SELECT p.id,p.name,p.short_description,p.description,COALESCE((SELECT MIN(COALESCE(v.sale_price,v.price,p.sale_price,p.price)) FROM product_variants v WHERE v.product_id=p.id AND v.active=1 AND (v.stock IS NULL OR v.stock>0)),COALESCE(p.sale_price,p.price)) AS starting_price,p.product_type,c.name AS category_name FROM products p LEFT JOIN product_categories c ON c.id=p.category_id WHERE p.active=1 AND (?='' OR p.name LIKE ? OR p.description LIKE ? OR c.name LIKE ?) ORDER BY p.featured DESC,p.created_at DESC LIMIT ?",[q,like,like,like,Math.max(1,Math.min(48,Number(limit)||20))]);
+    return {content:[{type:"text",text:JSON.stringify(rows)}]};
+  });
+  server.registerTool("get_product",{title:"Get LuMekH product",description:"Read one active public product with its active options and prices.",inputSchema:{productId:z.number().int().positive()}},async({productId})=>{
+    if(!dbReady)return {isError:true,content:[{type:"text",text:"The public catalog is temporarily unavailable."}]};
+    const [[product]]=await dbPool.execute("SELECT p.id,p.name,p.description,p.short_description,p.price,p.sale_price,COALESCE(p.sale_price,p.price) AS current_price,p.product_type,p.image_url,c.name AS category_name FROM products p LEFT JOIN product_categories c ON c.id=p.category_id WHERE p.id=? AND p.active=1 LIMIT 1",[productId]);
+    if(!product)return {isError:true,content:[{type:"text",text:"Product not found."}]};
+    const [variants]=await dbPool.execute("SELECT id,name,attributes_json,price,sale_price,image_url FROM product_variants WHERE product_id=? AND active=1 ORDER BY id LIMIT 100",[productId]);
+    return {content:[{type:"text",text:JSON.stringify({...product,variants})}]};
+  });
+  server.registerTool("list_services",{title:"List LuMekH services",description:"Read public bookable services, schedules and published prices. Does not return customer or booking records.",inputSchema:{query:z.string().trim().max(100).optional()}},async({query=""})=>{
+    if(!dbReady)return {isError:true,content:[{type:"text",text:"Public services are temporarily unavailable."}]};
+    const q=cleanText(query,100),like="%"+q+"%";
+    const [rows]=await dbPool.execute("SELECT s.id,s.name,s.description,s.duration_minutes,s.price,s.booking_mode,s.available_weekdays,s.start_time,s.end_time,c.name AS category_name FROM services s LEFT JOIN service_categories c ON c.id=s.category_id WHERE s.active=1 AND (?='' OR s.name LIKE ? OR s.description LIKE ? OR c.name LIKE ?) ORDER BY c.name,s.created_at DESC LIMIT 100",[q,like,like,like]);
+    return {content:[{type:"text",text:JSON.stringify(rows)}]};
+  });
+}
+async function handleMcpRequest(req,res) {
+  if(req.method!=="POST"){res.writeHead(405,{Allow:"POST"});res.end("Method not allowed.");return;}
+  if(!dbReady)return sendError(res,503,"MCP catalog is being prepared.");
+  const auth=await authenticateMcpKey(req);
+  if(!auth)return sendJson(res,401,{error:"A valid MCP bearer token is required."},{"WWW-Authenticate":"Bearer"});
+  if(auth.rateLimited)return sendError(res,429,"MCP request limit reached. Try again shortly.");
+  const mcp=new McpServer({name:"lumekh-store",version:"1.0.0"});
+  registerMcpCatalogTools(mcp);
+  const transport=new StreamableHTTPServerTransport({sessionIdGenerator:undefined,maxRequestBodySize:100000});
+  try{await mcp.connect(transport);await transport.handleRequest(req,res)}
+  catch(error){console.error("MCP request failed:",error.message);if(!res.headersSent)sendError(res,500,"MCP request could not be completed.");else if(!res.writableEnded)res.end()}
+  finally{await transport.close().catch(()=>{});await mcp.close().catch(()=>{})}
+}
+async function verifyWebhookDestination(value) {
+  const url=parseWebhookUrl(value),answers=await dns.lookup(url.hostname,{all:true,verbatim:true});
+  if(!answers.length||answers.some(item=>!isPublicAddress(item.address)))throw new Error("Webhook host must resolve only to public IP addresses.");
+  return {url,address:answers[0]};
+}
+async function postWebhook(destination,secret,eventType,deliveryId,payload) {
+  const {url,address}=await verifyWebhookDestination(destination),body=JSON.stringify(payload),timestamp=String(Math.floor(Date.now()/1000)),signature=signWebhook(secret,timestamp,body);
+  return await new Promise((resolve,reject)=>{
+    const request=https.request({protocol:"https:",hostname:url.hostname,port:url.port||443,method:"POST",path:url.pathname+url.search,agent:false,servername:url.hostname,lookup:(_host,_options,callback)=>callback(null,address.address,address.family),headers:{"Content-Type":"application/json","Content-Length":Buffer.byteLength(body),"User-Agent":"LuMekH-Webhooks/1.0","X-LuMekH-Event":eventType,"X-LuMekH-Delivery":deliveryId,"X-LuMekH-Timestamp":timestamp,"X-LuMekH-Signature":"t="+timestamp+",v1="+signature}});
+    const timeout=setTimeout(()=>request.destroy(new Error("Webhook request timed out.")),8000);
+    request.on("response",response=>{response.resume();response.on("end",()=>{clearTimeout(timeout);resolve(Number(response.statusCode)||0)})});
+    request.on("error",error=>{clearTimeout(timeout);reject(error)});request.end(body);
+  });
+}
+async function enqueueWebhookEvent(eventType,data) {
+  if(!dbReady||!WEBHOOK_EVENTS.includes(eventType))return;
+  const [endpoints]=await dbPool.execute("SELECT id,events_json FROM webhook_endpoints WHERE active=1 ORDER BY id LIMIT 50");
+  const payload={id:randomBytes(16).toString("hex"),type:eventType,createdAt:new Date().toISOString(),data};
+  for(const endpoint of endpoints){let events=[];try{events=JSON.parse(endpoint.events_json||"[]")}catch(_){}if(!Array.isArray(events)||!events.includes(eventType))continue;await dbPool.execute("INSERT INTO webhook_deliveries (endpoint_id,event_type,payload_json,status,next_attempt_at) VALUES (?,?,?,'pending',UTC_TIMESTAMP())",[endpoint.id,eventType,JSON.stringify(payload)])}
+}
+async function deliverWebhookRow(row) {
+  const attempt=Number(row.attempts)+1;
+  await dbPool.execute("UPDATE webhook_deliveries SET status='delivering',attempts=attempts+1 WHERE id=? AND status='pending'",[row.id]);
+  try{
+    const [[endpoint]]=await dbPool.execute("SELECT endpoint_url,secret_enc FROM webhook_endpoints WHERE id=? AND active=1 LIMIT 1",[row.endpoint_id]);
+    if(!endpoint)throw Object.assign(new Error("Webhook endpoint is disabled."),{statusCode:0});
+    const secret=decryptGoogleToken(endpoint.secret_enc),status=await postWebhook(endpoint.endpoint_url,secret,row.event_type,String(row.id),JSON.parse(row.payload_json));
+    if(status>=200&&status<300){await dbPool.execute("UPDATE webhook_deliveries SET status='delivered',response_status=?,delivered_at=UTC_TIMESTAMP() WHERE id=?",[status,row.id]);return;}
+    throw Object.assign(new Error("Webhook returned a non-success status."),{statusCode:status});
+  }catch(error){
+    const status=Number(error.statusCode)||null,maxAttempts=6,delays=[30,120,600,3600,21600],retry=attempt<maxAttempts;
+    if(retry){const delay=delays[Math.min(attempt-1,delays.length-1)];await dbPool.execute("UPDATE webhook_deliveries SET status='pending',response_status=?,next_attempt_at=DATE_ADD(UTC_TIMESTAMP(),INTERVAL "+delay+" SECOND) WHERE id=?",[status,row.id])}
+    else await dbPool.execute("UPDATE webhook_deliveries SET status='failed',response_status=? WHERE id=?",[status,row.id]);
+    console.warn("Webhook delivery failed:",row.id,error.message);
+  }
+}
+async function processWebhookQueue() {
+  if(!dbReady||webhookWorkerBusy)return;
+  webhookWorkerBusy=true;
+  try{
+    await dbPool.execute("UPDATE webhook_deliveries SET status='pending' WHERE status='delivering' AND updated_at<DATE_SUB(UTC_TIMESTAMP(),INTERVAL 10 MINUTE)");
+    const [rows]=await dbPool.execute("SELECT d.id,d.endpoint_id,d.event_type,d.payload_json,d.attempts FROM webhook_deliveries d JOIN webhook_endpoints e ON e.id=d.endpoint_id AND e.active=1 WHERE d.status='pending' AND d.next_attempt_at<=UTC_TIMESTAMP() ORDER BY d.created_at LIMIT 10");
+    for(const row of rows)await deliverWebhookRow(row);
+  }catch(error){console.error("Webhook queue failed:",error.message)}
+  finally{webhookWorkerBusy=false}
+}
+function startWebhookWorker(){if(webhookWorkerTimer)return;webhookWorkerTimer=setInterval(()=>{processWebhookQueue().catch(error=>console.error("Webhook queue failed:",error.message))},15000);webhookWorkerTimer.unref();processWebhookQueue().catch(error=>console.error("Webhook queue failed:",error.message))}
+
 async function api(req, res, url) {
   const route = url.pathname;
   if (req.method === "GET" && route === "/api/health") return sendJson(res, 200, { status: "ok", databaseReady: dbReady, emailReady: Boolean(process.env.SMTP_PASS) });
@@ -801,6 +909,7 @@ async function api(req, res, url) {
       const [result] = await conn.execute("INSERT INTO bookings (user_id,service_id,starts_at,notes,booking_dates_json,booking_extras_json,total_price,resource_id,customer_full_name,customer_phone,customer_address,customer_city,customer_postal_code) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", [session.user.id,serviceId,first,notes,JSON.stringify(bookingDates),JSON.stringify(extras.map(x=>({id:x.id,name:x.name,price:Number(x.price),salePrice:x.sale_price===null?null:Number(x.sale_price),unitPrice:Number(x.unitPrice),quantity:Number(x.quantity),maxQuantity:Number(x.max_quantity),imageUrl:x.image_url||null,durationMinutes:0,pricePerDay:Boolean(Number(x.price_per_day))}))),bookingTotal.toFixed(2),resourceId,fullName,phone,address,city,postalCode]);
       await conn.execute("UPDATE app_users SET name=?,phone=?,address=?,city=?,postal_code=? WHERE id=? AND role='customer'", [fullName,phone,address,city,postalCode,session.user.id]);
       await conn.commit();
+enqueueWebhookEvent("booking.created",{bookingId:Number(result.insertId),serviceId:Number(serviceId),startsAt:bookingDates.map(slot=>slot.startsAt),total:Number(bookingTotal.toFixed(2))}).catch(error=>console.error("Booking webhook enqueue failed:",error.message));
       // The booking is committed; release its availability locks before email
       // and calendar integrations so slow external services do not hold slots.
       for (const lockName of locks) { try { await conn.execute("SELECT RELEASE_LOCK(?)", [lockName]); } catch (_) {} }
@@ -890,6 +999,7 @@ async function api(req, res, url) {
         }
       }
       await conn.commit();
+enqueueWebhookEvent("order.created",{orderId:Number(order.insertId),total:Number(total.toFixed(2)),items:lines.map(line=>({productId:Number(line.id),variantId:line.variantId?Number(line.variantId):null,name:line.displayName,quantity:Number(line.quantity),unitPrice:Number(line.price)}))}).catch(error=>console.error("Order webhook enqueue failed:",error.message));
       let emailSent = false;
       if (process.env.SMTP_PASS) emailSent = await sendMail(email,"LuMekH order received","<p>Your order #"+order.insertId+" has been received. Total: ₹"+total.toFixed(2)+".</p><p>Payment will be confirmed separately.</p>");
       return sendJson(res,201,{message:"Order request saved. Payment will be confirmed separately.",orderId:order.insertId,total,emailSent});
@@ -930,6 +1040,48 @@ async function api(req, res, url) {
     if (session.user.role !== "admin") return sendError(res, 403, "CRM Admin access is required.");
     if (!dbReady) return sendError(res, 503, "CRM data is being prepared.");
     if (req.method !== "GET" && !safeEqual(String(req.headers["x-csrf-token"] || ""), session.csrfToken)) return sendError(res, 403, "Please refresh the page and try again.");
+
+    if (req.method === "GET" && route === "/api/admin/integrations") {
+      const [[keyCounts]]=await dbPool.execute("SELECT COUNT(*) AS total,SUM(active=1) AS active FROM mcp_api_keys");
+      const [keys]=await dbPool.execute("SELECT id,name,active,last_used_at,created_at FROM mcp_api_keys ORDER BY created_at DESC LIMIT 100");
+      const [endpoints]=await dbPool.execute("SELECT e.id,e.name,e.endpoint_url,e.events_json,e.active,e.created_at,(SELECT d.status FROM webhook_deliveries d WHERE d.endpoint_id=e.id ORDER BY d.created_at DESC LIMIT 1) AS last_status,(SELECT d.created_at FROM webhook_deliveries d WHERE d.endpoint_id=e.id ORDER BY d.created_at DESC LIMIT 1) AS last_delivery_at FROM webhook_endpoints e ORDER BY e.created_at DESC LIMIT 100");
+      for(const endpoint of endpoints){try{endpoint.events=JSON.parse(endpoint.events_json||"[]")}catch(_){endpoint.events=[]}delete endpoint.events_json;endpoint.url=endpoint.endpoint_url;delete endpoint.endpoint_url}
+      const [deliveries]=await dbPool.execute("SELECT d.id,d.endpoint_id,e.name AS endpoint_name,d.event_type,d.status,d.attempts,d.response_status,d.created_at,d.delivered_at FROM webhook_deliveries d JOIN webhook_endpoints e ON e.id=d.endpoint_id ORDER BY d.created_at DESC LIMIT 100");
+      return sendJson(res,200,{mcp:{endpoint:"/mcp",keys,activeKeys:Number(keyCounts.active||0),totalKeys:Number(keyCounts.total||0)},webhooks:{supportedEvents:WEBHOOK_EVENTS,endpoints,deliveries}});
+    }
+    if(req.method==="POST"&&route==="/api/admin/integrations/mcp-keys"){
+      const body=await readJson(req),name=cleanText(body.name,100);
+      if(name.length<2)return sendError(res,400,"Enter a name for this MCP connection.");
+      const [[counts]]=await dbPool.execute("SELECT SUM(active=1) AS active FROM mcp_api_keys");
+      if(Number(counts.active||0)>=10)return sendError(res,409,"Revoke an unused MCP key before creating another.");
+      const key=createApiKey();await dbPool.execute("INSERT INTO mcp_api_keys (name,token_hash) VALUES (?,?)",[name,hashApiKey(key)]);
+      return sendJson(res,201,{message:"MCP API key created. Copy it now; it will not be shown again.",key,endpoint:"/mcp"});
+    }
+    const mcpKeyMatch=route.match(/^\/api\/admin\/integrations\/mcp-keys\/(\d+)$/);
+    if(req.method==="DELETE"&&mcpKeyMatch){const [result]=await dbPool.execute("UPDATE mcp_api_keys SET active=0 WHERE id=? AND active=1",[Number(mcpKeyMatch[1])]);return result.affectedRows?sendJson(res,200,{message:"MCP key revoked."}):sendError(res,404,"That active MCP key was not found.")}
+    if(req.method==="POST"&&route==="/api/admin/integrations/webhooks"){
+      const body=await readJson(req),name=cleanText(body.name,100),url=cleanText(body.url,2048);
+      if(name.length<2)return sendError(res,400,"Enter a name for this webhook.");
+      let events;try{events=validateWebhookEvents(body.events)}catch(error){return sendError(res,400,error.message)}
+      try{await verifyWebhookDestination(url)}catch(error){return sendError(res,400,error.message)}
+      const [[counts]]=await dbPool.execute("SELECT COUNT(*) AS total FROM webhook_endpoints");
+      if(Number(counts.total)>=20)return sendError(res,409,"The webhook endpoint limit has been reached.");
+      const secret="whsec_"+randomBytes(32).toString("base64url");
+      const [result]=await dbPool.execute("INSERT INTO webhook_endpoints (name,endpoint_url,events_json,secret_enc) VALUES (?,?,?,?)",[name,new URL(url).toString(),JSON.stringify(events),encryptGoogleToken(secret)]);
+      return sendJson(res,201,{message:"Webhook added. Copy the signing secret now; it will not be shown again.",webhook:{id:result.insertId,name,url:new URL(url).toString(),events,active:true},secret});
+    }
+    const webhookRoute=route.match(/^\/api\/admin\/integrations\/webhooks\/(\d+)(?:\/(rotate))?$/);
+    if(webhookRoute&&req.method==="PATCH"&&!webhookRoute[2]){
+      const body=await readJson(req);if(typeof body.active!=="boolean")return sendError(res,400,"Choose whether the webhook is active.");
+      const [result]=await dbPool.execute("UPDATE webhook_endpoints SET active=? WHERE id=?",[body.active?1:0,Number(webhookRoute[1])]);
+      return result.affectedRows?sendJson(res,200,{message:body.active?"Webhook enabled.":"Webhook paused."}):sendError(res,404,"Webhook endpoint not found.");
+    }
+    if(webhookRoute&&req.method==="POST"&&webhookRoute[2]){
+      const secret="whsec_"+randomBytes(32).toString("base64url"),[result]=await dbPool.execute("UPDATE webhook_endpoints SET secret_enc=? WHERE id=?",[encryptGoogleToken(secret),Number(webhookRoute[1])]);
+      return result.affectedRows?sendJson(res,200,{message:"Signing secret rotated. Copy the new secret now; the previous secret is invalid.",secret}):sendError(res,404,"Webhook endpoint not found.");
+    }
+    const retryDelivery=route.match(/^\/api\/admin\/integrations\/deliveries\/(\d+)\/retry$/);
+    if(req.method==="POST"&&retryDelivery){const [result]=await dbPool.execute("UPDATE webhook_deliveries SET status='pending',attempts=0,response_status=NULL,next_attempt_at=UTC_TIMESTAMP() WHERE id=? AND status='failed'",[Number(retryDelivery[1])]);if(!result.affectedRows)return sendError(res,409,"Only failed deliveries can be retried.");processWebhookQueue().catch(error=>console.error("Webhook retry failed:",error.message));return sendJson(res,202,{message:"Webhook delivery queued for retry."})}
 
     if (req.method === "GET" && route === "/api/admin/summary") {
       const [rows] = await dbPool.query("SELECT (SELECT COUNT(*) FROM app_users WHERE role='customer' AND is_deleted=0) AS customers,(SELECT COUNT(*) FROM products WHERE active=1) AS products,(SELECT COUNT(*) FROM services WHERE active=1) AS services,(SELECT COUNT(*) FROM bookings WHERE status='requested') AS pending_bookings,(SELECT COUNT(*) FROM orders WHERE status='new') AS new_orders");
@@ -1358,6 +1510,7 @@ const cleanPageRoutes = Object.freeze({
   "/reset-password": { file: "reset-password.html", path: "/Reset-Password" },
   "/verify": { file: "verify.html", path: "/Verify" },
   "/admin/crm": { file: "admin/crm.html", path: "/Admin/CRM" },
+  "/admin/integrations": { file: "admin/integrations.html", path: "/Admin/Integrations" },
   "/admin/products": { file: "admin/products.html", path: "/Admin/Products" },
   "/admin/media": { file: "admin/media.html", path: "/Admin/Media" },
   "/admin/pdfs": { file: "admin/pdfs.html", path: "/Admin/PDFs" },
@@ -1378,6 +1531,7 @@ const legacyPageRoutes = Object.freeze({
   "/reset-password.html": "/Reset-Password",
   "/verify.html": "/Verify",
   "/admin/crm.html": "/Admin/CRM",
+  "/admin/integrations.html": "/Admin/Integrations",
   "/admin/products.html": "/Admin/Products",
   "/admin/media.html": "/Admin/Media",
   "/admin/pdfs.html": "/Admin/PDFs",
@@ -1423,6 +1577,7 @@ const server = http.createServer(async (req, res) => {
   for (const [name, value] of Object.entries(SECURITY_HEADERS)) res.setHeader(name, value);
   try {
     const url = new URL(req.url, "http://localhost");
+    if (url.pathname === "/mcp") return await handleMcpRequest(req, res);
     if (url.pathname.startsWith("/api/")) return await api(req, res, url);
     if (req.method !== "GET" && req.method !== "HEAD") { res.writeHead(405, { Allow: "GET, HEAD" }); res.end("Method not allowed."); return; }
     const routePath = url.pathname.replace(/\/+$/, "").toLowerCase() || "/";
