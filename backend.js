@@ -9,9 +9,18 @@ const nodemailer = require("nodemailer");
 
 const scryptAsync = promisify(scrypt);
 const publicDir = path.join(__dirname, "public");
+const publicOrigin = (() => { try { const candidate = new URL(process.env.PUBLIC_BASE_URL || "https://lumekh.com"); return candidate.protocol === "https:" && !candidate.username && !candidate.password ? candidate.origin : "https://lumekh.com"; } catch (_) { return "https://lumekh.com"; } })();
 const adminEmail = String(process.env.ADMIN_EMAIL || "lumekh000@gmail.com").trim().toLowerCase();
 const mailUser = process.env.SMTP_USER || "noreply@lumekh.com";
 const mimeTypes = { ".css": "text/css; charset=utf-8", ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".webp": "image/webp" };
+const SECURITY_HEADERS = Object.freeze({
+  "Content-Security-Policy": "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; script-src-attr 'none'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: https:; media-src 'self' data: https:; connect-src 'self'; frame-src 'self'; manifest-src 'self'; worker-src 'self'; upgrade-insecure-requests",
+  "X-Content-Type-Options": "nosniff",
+  "X-Frame-Options": "DENY",
+  "Referrer-Policy": "strict-origin-when-cross-origin",
+  "Strict-Transport-Security": "max-age=31536000",
+  "Permissions-Policy": "camera=(), microphone=(), geolocation=()"
+});
 
 const dbConfigured = Boolean(process.env.DB_NAME && process.env.DB_USER && process.env.DB_PASSWORD);
 const dbPool = dbConfigured ? mysql.createPool({
@@ -28,6 +37,7 @@ const dbPool = dbConfigured ? mysql.createPool({
 }) : null;
 let dbReady = false;
 const loginAttempts = new Map();
+const MAX_LOGIN_ATTEMPT_KEYS = 10000;
 
 function decodePngRgba(input) {
   if (!Buffer.isBuffer(input) || input.length < 33 || input.toString("ascii", 1, 4) !== "PNG") return null;
@@ -215,7 +225,7 @@ function parseCookies(header) {
 function originIsSame(req) {
   const origin = req.headers.origin;
   if (!origin) return true;
-  try { return new URL(origin).host === req.headers.host; } catch (_) { return false; }
+  try { const parsed = new URL(origin); return parsed.protocol === "https:" && parsed.origin === publicOrigin; } catch (_) { return false; }
 }
 async function readJson(req) {
   const chunks = [];
@@ -257,8 +267,7 @@ async function sendMail(to, subject, html) {
   return true;
 }
 function originFor(req) {
-  const scheme = String(req.headers["x-forwarded-proto"] || "https").split(",")[0].trim() === "http" ? "http" : "https";
-  return scheme + "://" + req.headers.host;
+  return publicOrigin;
 }
 async function createSession(res, userId) {
   const token = randomBytes(32).toString("hex");
@@ -287,14 +296,18 @@ async function publicSession(req, res) {
   sendJson(res, 200, { user: session ? session.user : null, csrfToken: session ? session.csrfToken : null, databaseReady: dbReady, emailReady: Boolean(process.env.SMTP_PASS) });
 }
 function attemptKey(req, email) { return (req.socket.remoteAddress || "unknown") + ":" + email; }
+function makeLoginAttemptRoom(now = Date.now()) {
+  for (const [key, entry] of loginAttempts) if (now - entry.started > 15 * 60 * 1000) loginAttempts.delete(key);
+  while (loginAttempts.size >= MAX_LOGIN_ATTEMPT_KEYS) loginAttempts.delete(loginAttempts.keys().next().value);
+}
 function loginFailureCount(req, email) {
   const key=attemptKey(req,email),now=Date.now(),entry=loginAttempts.get(key);
-  if(!entry||now-entry.started>15*60*1000){loginAttempts.set(key,{started:now,count:0});return 0}
+  if(!entry||now-entry.started>15*60*1000){loginAttempts.delete(key);if(loginAttempts.size>=MAX_LOGIN_ATTEMPT_KEYS)makeLoginAttemptRoom(now);loginAttempts.set(key,{started:now,count:0});return 0}
   return entry.count;
 }
 function recordLoginFailure(req,email) {
   const key=attemptKey(req,email),now=Date.now(),entry=loginAttempts.get(key);
-  if(!entry||now-entry.started>15*60*1000){loginAttempts.set(key,{started:now,count:1});return 1}
+  if(!entry||now-entry.started>15*60*1000){loginAttempts.delete(key);if(loginAttempts.size>=MAX_LOGIN_ATTEMPT_KEYS)makeLoginAttemptRoom(now);loginAttempts.set(key,{started:now,count:1});return 1}
   entry.count+=1;return entry.count;
 }
 function clearAttempts(req, email) { loginAttempts.delete(attemptKey(req, email)); }
@@ -1407,6 +1420,7 @@ async function serveStatic(res, pathname, search = "") {
 }
 
 const server = http.createServer(async (req, res) => {
+  for (const [name, value] of Object.entries(SECURITY_HEADERS)) res.setHeader(name, value);
   try {
     const url = new URL(req.url, "http://localhost");
     if (url.pathname.startsWith("/api/")) return await api(req, res, url);
