@@ -968,8 +968,35 @@ async function api(req, res, url) {
       return sendJson(res, 200, { message: "Customer account deleted. Historical orders and bookings were retained." });
     }
     const uploadMatch = route.match(/^\/api\/admin\/media$/);
+    if (req.method === "GET" && route === "/api/admin/media") {
+      const [assets] = await dbPool.query("SELECT id,file_name,mime_type,file_size,is_private,created_at FROM media_assets ORDER BY created_at DESC,id DESC LIMIT 500");
+      const refs = [];
+      for (const [label,table,column] of [["Product cover","products","image_url"],["Product gallery","product_images","image_url"],["Product variation","product_variants","image_url"],["Service image","service_images","image_url"],["Service extra","service_extras","image_url"],["Booking resource","booking_resources","image_url"]]) {
+        const [rows] = await dbPool.query("SELECT `"+column+"` AS url FROM `"+table+"` WHERE `"+column+"` IS NOT NULL AND `"+column+"` LIKE '%/api/media/%'");
+        for (const row of rows) { const match=String(row.url).match(/\/api\/media\/(\d+)/); if(match) refs.push({id:Number(match[1]),label}); }
+      }
+      const [extraRows] = await dbPool.query("SELECT image_url,images_json FROM service_extras");
+      for (const row of extraRows) for (const value of [row.image_url,row.images_json]) { const matches=String(value||"").matchAll(/\/api\/media\/(\d+)/g); for(const match of matches) refs.push({id:Number(match[1]),label:"Service extra"}); }
+      const [downloads] = await dbPool.query("SELECT download_media_id AS id FROM products WHERE download_media_id IS NOT NULL");
+      for (const row of downloads) refs.push({id:Number(row.id),label:"Product download"});
+      const used = new Map(); for(const ref of refs){if(!used.has(ref.id))used.set(ref.id,new Set());used.get(ref.id).add(ref.label);}
+      return sendJson(res,200,{media:assets.map(asset=>({...asset,url:asset.is_private?null:"/api/media/"+asset.id,usedBy:[...(used.get(Number(asset.id))||[])]}))});
+    }
+    const mediaItemMatch=route.match(/^\/api\/admin\/media\/(\d+)$/);
+    if(req.method==="DELETE"&&mediaItemMatch){
+      const id=Number(mediaItemMatch[1]);
+      const [[asset]]=await dbPool.execute("SELECT id FROM media_assets WHERE id=? LIMIT 1",[id]);
+      if(!asset)return sendError(res,404,"Image not found.");
+      const patterns=[["products","image_url"],["product_images","image_url"],["product_variants","image_url"],["service_images","image_url"],["service_extras","image_url"],["booking_resources","image_url"]];
+      for(const [table,column] of patterns){const [[found]]=await dbPool.execute("SELECT COUNT(*) AS total FROM `"+table+"` WHERE `"+column+"` REGEXP ?",["/api/media/[^0-9]*"+id+"([^0-9]|$)"]);if(Number(found.total))return sendError(res,409,"This image is in use. Remove it from its listing before deleting it.");}
+      const [[extraFound]]=await dbPool.execute("SELECT COUNT(*) AS total FROM service_extras WHERE image_url REGEXP ? OR images_json REGEXP ?",["/api/media/[^0-9]*"+id+"([^0-9]|$)","/api/media/[^0-9]*"+id+"([^0-9]|$)"]);
+      const [[downloadFound]]=await dbPool.execute("SELECT COUNT(*) AS total FROM products WHERE download_media_id=?",[id]);
+      if(Number(extraFound.total)||Number(downloadFound.total))return sendError(res,409,"This file is in use. Remove it from its listing before deleting it.");
+      await dbPool.execute("DELETE FROM media_assets WHERE id=?",[id]);return sendJson(res,200,{message:"Unused image deleted."});
+    }
     if (req.method === "POST" && uploadMatch) {
-      const kind = url.searchParams.get("kind") === "download" ? "download" : "image";
+      const requestedKind=url.searchParams.get("kind");
+      const kind = requestedKind === "download" ? "download" : requestedKind === "pdf" ? "pdf" : "image";
       const limit = kind === "image" ? 8_000_000 : 15_000_000;
       const data = await readRaw(req,limit);
       if (!data.length) return sendError(res,400,"Choose a file to upload.");
@@ -984,9 +1011,12 @@ async function api(req, res, url) {
         else if (header.toString("ascii",0,4)==="RIFF"&&header.toString("ascii",8,12)==="WEBP") mimeType="image/webp";
         else if (header.toString("ascii",0,3)==="GIF") mimeType="image/gif";
         else return sendError(res,415,"Use a JPG, PNG, WebP, or GIF image.");
+      } else if(kind === "pdf") {
+        if(data.subarray(0,5).toString("ascii")!=="%PDF-")return sendError(res,415,"Choose a valid PDF document.");
+        mimeType="application/pdf";
       }
-      const [saved] = await dbPool.execute("INSERT INTO media_assets (file_name,mime_type,file_size,is_private,data) VALUES (?,?,?,?,?)",[fileName,mimeType,data.length,kind==="download"?1:0,data]);
-      return sendJson(res,201,{media:{id:saved.insertId,fileName,url:kind==="image"?"/api/media/"+saved.insertId:null,private:kind==="download"}});
+      const [saved] = await dbPool.execute("INSERT INTO media_assets (file_name,mime_type,file_size,is_private,data) VALUES (?,?,?,?,?)",[fileName,mimeType,data.length,kind!=="image"?1:0,data]);
+      return sendJson(res,201,{media:{id:saved.insertId,fileName,url:kind==="image"?"/api/media/"+saved.insertId:null,private:kind!=="image"}});
     }
     if (req.method === "GET" && route === "/api/admin/categories") {
       const [categories] = await dbPool.query("SELECT c.id,c.name,c.slug,c.description,c.active,COUNT(p.id) AS product_count FROM product_categories c LEFT JOIN products p ON p.category_id=c.id GROUP BY c.id ORDER BY c.sort_order,c.name");
@@ -1316,6 +1346,8 @@ const cleanPageRoutes = Object.freeze({
   "/verify": { file: "verify.html", path: "/Verify" },
   "/admin/crm": { file: "admin/crm.html", path: "/Admin/CRM" },
   "/admin/products": { file: "admin/products.html", path: "/Admin/Products" },
+  "/admin/media": { file: "admin/media.html", path: "/Admin/Media" },
+  "/admin/pdfs": { file: "admin/pdfs.html", path: "/Admin/PDFs" },
   "/admin/services": { file: "admin/services.html", path: "/Admin/Services" },
   "/admin/bookings": { file: "admin/bookings.html", path: "/Admin/Bookings" },
   "/lmh-admin": { file: "admin/login.html", path: "/lmh-admin" }
@@ -1334,6 +1366,8 @@ const legacyPageRoutes = Object.freeze({
   "/verify.html": "/Verify",
   "/admin/crm.html": "/Admin/CRM",
   "/admin/products.html": "/Admin/Products",
+  "/admin/media.html": "/Admin/Media",
+  "/admin/pdfs.html": "/Admin/PDFs",
   "/admin/services.html": "/Admin/Services",
   "/admin/bookings.html": "/Admin/Bookings",
   "/admin/login": "/lmh-admin",
