@@ -2201,3 +2201,26 @@ body.booking-success-open{overflow:hidden}
 .checkout-time-slots[hidden]{display:none!important}
 
 .event-date-summary[hidden]{display:none!important}
+
+/* Dedicated admin asset libraries */
+.admin-media-upload{position:relative;overflow:hidden;cursor:pointer;white-space:nowrap}
+.admin-media-upload input{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer}
+.admin-asset-panel{padding:22px}
+.admin-asset-toolbar{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:18px}
+.admin-asset-toolbar h2{margin:0 0 5px;font-size:20px}
+.admin-asset-toolbar p{margin:0;font-size:12px}
+.admin-asset-toolbar input{width:min(300px,100%);height:42px;padding:0 13px;border:1px solid #e4ddd5;border-radius:13px;font:inherit}
+.admin-asset-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(235px,1fr));gap:13px}
+.admin-asset-card{display:grid;grid-template-columns:70px minmax(0,1fr);gap:11px;padding:12px;border:1px solid #eee2d7;border-radius:16px;background:#fffaf6;min-width:0}
+.admin-asset-preview{grid-row:1/3;width:70px;height:70px;display:grid;place-items:center;overflow:hidden;border:1px solid #eee0d4;border-radius:12px;background:#fff}
+.admin-asset-preview img{width:100%;height:100%;object-fit:cover}
+.admin-pdf-icon{display:grid;place-items:center;width:42px;height:48px;border-radius:7px;background:#fff0ec;color:#e84e39;font-size:12px;font-weight:900;box-shadow:0 0 0 1px #f5c9bf}
+.admin-asset-copy{display:grid;align-content:center;gap:4px;min-width:0}
+.admin-asset-copy strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}
+.admin-asset-copy small{color:#77716b;font-size:10px;line-height:1.4}
+.admin-asset-copy .admin-asset-use{overflow-wrap:anywhere}
+.admin-asset-actions{grid-column:2;display:flex;gap:7px;align-items:center}
+.admin-asset-actions .btn{font-size:11px;padding:6px 10px}
+.admin-asset-actions .btn:disabled{opacity:.48;cursor:not-allowed}
+.admin-asset-panel .empty-state{grid-column:1/-1}
+@media(max-width:640px){.admin-asset-panel{padding:15px}.admin-asset-toolbar{align-items:stretch;flex-direction:column}.admin-asset-toolbar input{width:100%;box-sizing:border-box}.admin-asset-grid{grid-template-columns:minmax(0,1fr)}.admin-heading:has(.admin-media-upload){align-items:flex-start;flex-direction:column}.admin-media-upload{align-self:stretch;justify-content:center}}
