@@ -816,7 +816,7 @@ async function api(req, res, url) {
     if (session.user.role !== "customer") return sendError(res,403,"Sign in with a customer account to request a booking.");
     const body = await readJson(req);
     const serviceId = Number(body.serviceId);
-    let resourceId = null;
+    let resourceId = null, resourceName = null;
     const dates = Array.isArray(body.dates) ? [...new Set(body.dates.map(x => cleanText(x, 10)).filter(x => /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(x)))].sort() : [];
     const dateTimes = new Map((Array.isArray(body.dateTimes) ? body.dateTimes : []).filter(x => x && /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(String(x.date)) && typeof x.startsAt === "string").map(x => [x.date, x.startsAt]));
     const time = String(body.time || "09:00");
@@ -844,9 +844,9 @@ async function api(req, res, url) {
       let assignedResources=[];try{assignedResources=JSON.parse(service.resource_ids||"[]").map(Number)}catch(_){}
       if (assignedResources.length) {
         const marks = assignedResources.map(() => "?").join(",");
-        const [activeResources] = await conn.execute("SELECT id FROM booking_resources WHERE active=1 AND id IN (" + marks + ")", assignedResources);
+        const [activeResources] = await conn.execute("SELECT id,name FROM booking_resources WHERE active=1 AND id IN (" + marks + ")", assignedResources);
         const activeIds = new Set(activeResources.map(row => Number(row.id)));
-        resourceId = assignedResources.find(id => activeIds.has(id)) || null;
+        resourceId = assignedResources.find(id => activeIds.has(id)) || null;resourceName=activeResources.find(row=>Number(row.id)===Number(resourceId))?.name||null;
         if (!resourceId) { await conn.rollback(); return sendError(res,400,"The company assigned to this service is no longer available. Please contact us."); }
       }
       const durationMinutes = Number(service.duration_minutes);
@@ -909,7 +909,7 @@ async function api(req, res, url) {
       const [result] = await conn.execute("INSERT INTO bookings (user_id,service_id,starts_at,notes,booking_dates_json,booking_extras_json,total_price,resource_id,customer_full_name,customer_phone,customer_address,customer_city,customer_postal_code) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", [session.user.id,serviceId,first,notes,JSON.stringify(bookingDates),JSON.stringify(extras.map(x=>({id:x.id,name:x.name,price:Number(x.price),salePrice:x.sale_price===null?null:Number(x.sale_price),unitPrice:Number(x.unitPrice),quantity:Number(x.quantity),maxQuantity:Number(x.max_quantity),imageUrl:x.image_url||null,durationMinutes:0,pricePerDay:Boolean(Number(x.price_per_day))}))),bookingTotal.toFixed(2),resourceId,fullName,phone,address,city,postalCode]);
       await conn.execute("UPDATE app_users SET name=?,phone=?,address=?,city=?,postal_code=? WHERE id=? AND role='customer'", [fullName,phone,address,city,postalCode,session.user.id]);
       await conn.commit();
-enqueueWebhookEvent("booking.created",{bookingId:Number(result.insertId),serviceId:Number(serviceId),startsAt:bookingDates.map(slot=>slot.startsAt),total:Number(bookingTotal.toFixed(2))}).catch(error=>console.error("Booking webhook enqueue failed:",error.message));
+const serviceSubtotal=Number((Number(service.price||0)*occurrences.length).toFixed(2)),extrasTotal=Number((bookingTotal-serviceSubtotal).toFixed(2));enqueueWebhookEvent("booking.created",{bookingId:Number(result.insertId),status:"requested",createdAt:new Date().toISOString(),currency:"INR",customer:{fullName,email,phone,address,city,postalCode},service:{serviceId:Number(service.id),name:service.name,bookingMode:service.booking_mode,durationMinutes:Number(service.duration_minutes),unitPrice:Number(Number(service.price||0).toFixed(2))},provider:{resourceId:resourceId?Number(resourceId):null,name:resourceName},bookingDates:bookingDates.map(slot=>({date:slot.date,endDate:slot.endDate||null,time:slot.time,startsAt:slot.startsAt})),startsAt:bookingDates.map(slot=>slot.startsAt),extras:extras.map(extra=>{const quantity=Number(extra.quantity||1),unitPrice=Number(extra.unitPrice||0),pricePerDay=Boolean(Number(extra.price_per_day)),lineTotal=unitPrice*quantity*(pricePerDay?durationDays*occurrences.length:1);return {extraId:Number(extra.id),name:extra.name,quantity,unitPrice:Number(unitPrice.toFixed(2)),pricePerDay,lineTotal:Number(lineTotal.toFixed(2))}}),notes,total: Number(bookingTotal.toFixed(2)),subtotal:Number((serviceSubtotal+extrasTotal).toFixed(2)),serviceSubtotal,extrasSubtotal:extrasTotal}).catch(error=>console.error("Booking webhook enqueue failed:",error.message));
       // The booking is committed; release its availability locks before email
       // and calendar integrations so slow external services do not hold slots.
       for (const lockName of locks) { try { await conn.execute("SELECT RELEASE_LOCK(?)", [lockName]); } catch (_) {} }
@@ -999,7 +999,7 @@ enqueueWebhookEvent("booking.created",{bookingId:Number(result.insertId),service
         }
       }
       await conn.commit();
-enqueueWebhookEvent("order.created",{orderId:Number(order.insertId),total:Number(total.toFixed(2)),items:lines.map(line=>({productId:Number(line.id),variantId:line.variantId?Number(line.variantId):null,name:line.displayName,quantity:Number(line.quantity),unitPrice:Number(line.price)}))}).catch(error=>console.error("Order webhook enqueue failed:",error.message));
+enqueueWebhookEvent("order.created",{orderId:Number(order.insertId),status:"new",createdAt:new Date().toISOString(),currency:"INR",customer:{fullName,email,phone,address,city,postalCode},items:lines.map(line=>({productId:Number(line.id),variantId:line.variantId?Number(line.variantId):null,name:line.displayName,sku:line.sku||null,imageUrl:line.imageUrl||null,productType:line.type,quantity:Number(line.quantity),unitPrice:Number(line.price.toFixed(2)),lineTotal:Number((line.price*line.quantity).toFixed(2))})),subtotal:Number(total.toFixed(2)),shippingTotal:0,taxTotal:0,total:Number(total.toFixed(2))}).catch(error=>console.error("Order webhook enqueue failed:",error.message));
       let emailSent = false;
       if (process.env.SMTP_PASS) emailSent = await sendMail(email,"LuMekH order received","<p>Your order #"+order.insertId+" has been received. Total: ₹"+total.toFixed(2)+".</p><p>Payment will be confirmed separately.</p>");
       return sendJson(res,201,{message:"Order request saved. Payment will be confirmed separately.",orderId:order.insertId,total,emailSent});
@@ -1074,9 +1074,19 @@ enqueueWebhookEvent("order.created",{orderId:Number(order.insertId),total:Number
     if(webhookRoute&&req.method==="DELETE"&&!webhookRoute[2]){const [result]=await dbPool.execute("DELETE FROM webhook_endpoints WHERE id=?",[Number(webhookRoute[1])]);return result.affectedRows?sendJson(res,200,{message:"Webhook deleted. Its delivery history was also removed."}):sendError(res,404,"Webhook endpoint not found.");}
     if(webhookRoute&&webhookRoute[2]==="test"&&req.method==="POST"){const [[endpoint]]=await dbPool.execute("SELECT id,name,endpoint_url,secret_enc FROM webhook_endpoints WHERE id=? AND active=1 LIMIT 1",[Number(webhookRoute[1])]);if(!endpoint)return sendError(res,404,"Enable this webhook before sending a test.");const payload={id:randomBytes(16).toString("hex"),type:"webhook.test",createdAt:new Date().toISOString(),data:{message:"LuMekH webhook test delivery",test:true}},[result]=await dbPool.execute("INSERT INTO webhook_deliveries (endpoint_id,event_type,payload_json,status,attempts,next_attempt_at) VALUES (?,'webhook.test',?,'delivering',1,UTC_TIMESTAMP())",[endpoint.id,JSON.stringify(payload)]),deliveryId=result.insertId;try{const status=await postWebhook(endpoint.endpoint_url,decryptGoogleToken(endpoint.secret_enc),"webhook.test",String(deliveryId),payload);if(status<200||status>=300){await dbPool.execute("UPDATE webhook_deliveries SET status='failed',response_status=? WHERE id=?",[status,deliveryId]);return sendError(res,502,"Test delivery failed: endpoint returned HTTP "+status+". Check n8n is listening on this exact Test URL.")}await dbPool.execute("UPDATE webhook_deliveries SET status='delivered',response_status=?,delivered_at=UTC_TIMESTAMP() WHERE id=?",[status,deliveryId]);return sendJson(res,200,{message:"Test delivered successfully (HTTP "+status+"). Check the n8n output.",deliveryId,responseStatus:status})}catch(error){const status=Number(error.statusCode)||null;await dbPool.execute("UPDATE webhook_deliveries SET status='failed',response_status=? WHERE id=?",[status,deliveryId]);const detail=status?"HTTP "+status:String(error.message||"Network error");return sendError(res,502,"Test delivery failed: "+detail+". Check the endpoint URL and n8n listener.")}}
     if(webhookRoute&&req.method==="PATCH"&&!webhookRoute[2]){
-      const body=await readJson(req);if(typeof body.active!=="boolean")return sendError(res,400,"Choose whether the webhook is active.");
-      const [result]=await dbPool.execute("UPDATE webhook_endpoints SET active=? WHERE id=?",[body.active?1:0,Number(webhookRoute[1])]);
-      return result.affectedRows?sendJson(res,200,{message:body.active?"Webhook enabled.":"Webhook paused."}):sendError(res,404,"Webhook endpoint not found.");
+      const body=await readJson(req),endpointId=Number(webhookRoute[1]);
+      if(typeof body.active==="boolean"){
+        const [result]=await dbPool.execute("UPDATE webhook_endpoints SET active=? WHERE id=?",[body.active?1:0,endpointId]);
+        return result.affectedRows?sendJson(res,200,{message:body.active?"Webhook enabled.":"Webhook paused."}):sendError(res,404,"Webhook endpoint not found.");
+      }
+      const name=cleanText(body.name,100),destination=cleanText(body.url,2048);
+      if(name.length<2)return sendError(res,400,"Enter a name for this webhook.");
+      let events;try{events=validateWebhookEvents(body.events)}catch(error){return sendError(res,400,error.message)}
+      let normalizedUrl;try{await verifyWebhookDestination(destination);normalizedUrl=new URL(destination).toString()}catch(error){return sendError(res,400,error.message)}
+      const [[existing]]=await dbPool.execute("SELECT id FROM webhook_endpoints WHERE id=? LIMIT 1",[endpointId]);
+      if(!existing)return sendError(res,404,"Webhook endpoint not found.");
+      await dbPool.execute("UPDATE webhook_endpoints SET name=?,endpoint_url=?,events_json=? WHERE id=?",[name,normalizedUrl,JSON.stringify(events),endpointId]);
+      return sendJson(res,200,{message:"Webhook endpoint updated.",webhook:{id:endpointId,name,url:normalizedUrl,events}});
     }
     if(webhookRoute&&req.method==="POST"&&webhookRoute[2]){
       const secret="whsec_"+randomBytes(32).toString("base64url"),[result]=await dbPool.execute("UPDATE webhook_endpoints SET secret_enc=? WHERE id=?",[encryptGoogleToken(secret),Number(webhookRoute[1])]);
