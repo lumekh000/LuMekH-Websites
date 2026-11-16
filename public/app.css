@@ -2191,3 +2191,9 @@ body.booking-success-open{overflow:hidden}
 .checkout-time-slot:disabled{border-color:#e5dfdb;background:#f3f1ef;color:#aaa;cursor:not-allowed;text-decoration:line-through}
 .checkout-time-slots-loading{grid-column:1/-1;padding:8px 0;color:#716a66;font-size:13px}
 @media(max-width:600px){.checkout-time-slots{grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}.checkout-time-slot{min-height:38px;padding:7px 5px;font-size:12px}}
+
+/* Make customer account actions easy to spot during checkout. */
+.checkout-signin-actions{display:flex;flex-wrap:wrap;gap:9px;margin-top:10px}
+.checkout-signin-action{display:inline-flex;align-items:center;justify-content:center;min-height:38px;padding:7px 14px;border:1px solid #f26762;border-radius:999px;background:#f26762;color:#fff;font-weight:800;text-decoration:none;transition:filter .15s ease,transform .15s ease}
+.checkout-signin-action:hover{color:#fff;filter:brightness(.93);transform:translateY(-1px)}
+.checkout-signin-action:focus-visible{outline:3px solid #7568e8;outline-offset:3px}
