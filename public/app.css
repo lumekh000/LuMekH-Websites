@@ -2197,3 +2197,5 @@ body.booking-success-open{overflow:hidden}
 .checkout-signin-action{display:inline-flex;align-items:center;justify-content:center;min-height:38px;padding:7px 14px;border:1px solid #f26762;border-radius:999px;background:#f26762;color:#fff;font-weight:800;text-decoration:none;transition:filter .15s ease,transform .15s ease}
 .checkout-signin-action:hover{color:#fff;filter:brightness(.93);transform:translateY(-1px)}
 .checkout-signin-action:focus-visible{outline:3px solid #7568e8;outline-offset:3px}
+
+.checkout-time-slots[hidden]{display:none!important}
