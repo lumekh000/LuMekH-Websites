@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#fff9ef">
+<title>Integrations | LuMekH™ Admin</title>
+<link rel="stylesheet" href="/app.css?v=20261116-integrations-1">
+<script defer src="/app.js?v=20261116-integrations-1"></script>
+<script defer src="/admin-integrations.js?v=20261116-integrations-1"></script>
+<link rel="icon" type="image/png" href="/assets/lumekh-logo.png?v=brand-20261113">
+</head>
+<body class="admin-body"><div class="admin-app-shell">
+<aside class="admin-sidebar">
+  <a class="admin-sidebar-brand" href="/Admin/CRM"><img src="/assets/lumekh-logo.png" alt=""><span><strong>LuMekH™</strong><small>ADMIN WORKSPACE</small></span></a>
+  <nav class="admin-sidebar-nav" aria-label="Admin sections">
+    <a class="admin-side-link" href="/Admin/CRM"><span>▦</span>CRM</a>
+    <a class="admin-side-link" href="/Admin/Products"><span>▣</span>Products</a>
+    <a class="admin-side-link" href="/Admin/Services"><span>◇</span>Services</a>
+    <a class="admin-side-link" href="/Admin/Integrations" aria-current="page"><span>⌘</span>Integrations</a>
+    <a class="admin-side-link" href="/Admin/Media"><span>▧</span>Media</a>
+    <a class="admin-side-link" href="/Admin/PDFs"><span>▤</span>PDFs</a>
+  </nav>
+  <div class="admin-sidebar-bottom"><a class="admin-side-utility" href="/">View website ↗</a><button id="logout" class="admin-side-signout" type="button">Sign out</button></div>
+</aside>
+<div class="admin-main-area">
+  <header class="admin-headerbar"><div><small>LUMEKH · PRIVATE WORKSPACE</small><strong>Integrations</strong></div><span class="admin-header-context">MCP & webhooks</span></header>
+  <main class="admin-page admin-content integrations-page">
+    <section class="admin-heading"><div><p class="eyebrow">CONNECT YOUR WORKFLOWS</p><h1>Integrations <span class="gradient">studio.</span></h1><p class="muted">Connect AI clients to public catalog data and send signed order or booking events to your systems.</p></div><span class="secure-chip"><span></span> Admin only</span></section>
+    <div id="integration-alert" class="integration-alert" role="status" aria-live="polite" hidden></div>
+    <section class="integration-feature-grid">
+      <article class="panel integration-card mcp-card">
+        <div class="integration-card-top"><span class="integration-icon">⌘</span><span class="integration-pill">READ ONLY</span></div>
+        <p class="eyebrow">MODEL CONTEXT PROTOCOL</p><h2>LuMekH MCP server</h2>
+        <p class="muted">Let an MCP client search products, read product options and prices, and browse bookable services. Customer accounts, orders and bookings stay private.</p>
+        <label class="integration-endpoint-label" for="mcp-endpoint">Server endpoint</label><div class="integration-copy-row"><input id="mcp-endpoint" readonly value="https://lumekh.com/mcp"><button class="btn compact" type="button" data-copy="mcp-endpoint">Copy</button></div>
+        <form id="mcp-key-form" class="integration-create-form"><label for="mcp-key-name">New connection name</label><div class="integration-form-row"><input id="mcp-key-name" name="name" maxlength="100" placeholder="e.g. Claude workspace" required><button class="btn primary" type="submit">Create API key</button></div></form>
+        <div id="mcp-secret-reveal" class="integration-secret-reveal" hidden></div>
+        <div class="integration-client-config"><strong>Client setup</strong><pre><code>{
+  "mcpServers": {
+    "lumekh": {
+      "url": "https://lumekh.com/mcp",
+      "headers": { "Authorization": "Bearer YOUR_API_KEY" }
+    }
+  }
+}</code></pre></div>
+        <div class="integration-list-heading"><h3>API keys</h3><span id="mcp-key-count" class="muted"></span></div><div id="mcp-key-list" class="integration-list"><p class="muted">Loading keys…</p></div>
+      </article>
+      <article class="panel integration-card webhook-card">
+        <div class="integration-card-top"><span class="integration-icon coral">↗</span><span class="integration-pill">SIGNED · HTTPS</span></div>
+        <p class="eyebrow">EVENT DELIVERY</p><h2>Webhooks</h2>
+        <p class="muted">Receive order and booking notifications in your automation tool. Payloads include event IDs, item details and totals; they omit customer contact details.</p>
+        <form id="webhook-form" class="integration-webhook-form">
+          <label for="webhook-name">Connection name</label><input id="webhook-name" name="name" maxlength="100" placeholder="e.g. Order automation" required>
+          <label for="webhook-url">HTTPS destination URL</label><input id="webhook-url" name="url" type="url" inputmode="url" placeholder="https://hooks.example.com/lumekh" required>
+          <fieldset><legend>Events to send</legend><label class="integration-check"><input type="checkbox" name="events" value="order.created" checked><span>Order created</span></label><label class="integration-check"><input type="checkbox" name="events" value="booking.created"><span>Booking created</span></label></fieldset>
+          <button class="btn primary" type="submit">＋ Add webhook</button>
+        </form>
+        <div id="webhook-secret-reveal" class="integration-secret-reveal" hidden></div>
+        <div class="integration-list-heading"><h3>Endpoints</h3><span id="webhook-count" class="muted"></span></div><div id="webhook-list" class="integration-list"><p class="muted">Loading endpoints…</p></div>
+      </article>
+    </section>
+    <section class="panel integration-deliveries-panel"><div class="integration-list-heading"><div><p class="eyebrow">DELIVERY LOG</p><h2>Recent webhook activity</h2></div><button class="btn compact" id="refresh-integrations" type="button">Refresh</button></div><div class="integration-delivery-list" id="webhook-deliveries"><p class="muted">Loading delivery history…</p></div></section>
+    <p class="integration-security-note">Secrets are shown once and stored encrypted or as one-way hashes. Rotate or revoke a credential immediately if it is shared by mistake.</p>
+  </main>
+</div></div></body></html>
