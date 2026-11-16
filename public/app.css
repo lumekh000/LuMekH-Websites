@@ -2199,3 +2199,5 @@ body.booking-success-open{overflow:hidden}
 .checkout-signin-action:focus-visible{outline:3px solid #7568e8;outline-offset:3px}
 
 .checkout-time-slots[hidden]{display:none!important}
+
+.event-date-summary[hidden]{display:none!important}
