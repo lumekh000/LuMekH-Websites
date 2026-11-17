@@ -2285,3 +2285,11 @@ body.booking-success-open{overflow:hidden}
 .store-catalog-panel .store-toolbar .store-filter,.services-filterbar .service-category{min-width:0}
 @media(max-width:900px){.store-catalog-panel .store-toolbar,.services-filterbar{grid-template-columns:48px repeat(3,minmax(0,1fr))!important}}
 @media(max-width:600px){.store-catalog-panel .store-toolbar,.services-filterbar{grid-template-columns:48px repeat(2,minmax(0,1fr))!important}.store-catalog-panel .store-toolbar .store-filter:last-child,.services-filterbar .service-category:last-child{grid-column:2!important}}
+
+
+/* Separate the Service catalog filters; older layout rules placed both labels in one grid cell. */
+.services-filterbar{display:grid!important;grid-template-columns:48px minmax(150px,200px) minmax(150px,200px)!important;grid-auto-flow:row!important;align-items:end!important;justify-content:start!important}
+.services-filterbar>.service-search-control{grid-column:1!important;grid-row:1!important}
+.services-filterbar>.service-category{grid-column:auto!important;grid-row:1!important;width:100%!important;max-width:200px!important;min-width:0!important;flex:none!important}
+@media(max-width:900px){.services-filterbar{grid-template-columns:48px repeat(2,minmax(0,200px))!important}}
+@media(max-width:600px){.services-filterbar{grid-template-columns:48px minmax(0,1fr)!important}.services-filterbar>.service-category{grid-column:1/-1!important;max-width:none!important}.services-filterbar>.service-category:nth-child(2){grid-row:2!important}.services-filterbar>.service-category:nth-child(3){grid-row:3!important}.services-filterbar>.service-search-control{grid-column:1!important;grid-row:1!important}}
