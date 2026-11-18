@@ -2293,3 +2293,14 @@ body.booking-success-open{overflow:hidden}
 .services-filterbar>.service-category{grid-column:auto!important;grid-row:1!important;width:100%!important;max-width:200px!important;min-width:0!important;flex:none!important}
 @media(max-width:900px){.services-filterbar{grid-template-columns:48px repeat(2,minmax(0,200px))!important}}
 @media(max-width:600px){.services-filterbar{grid-template-columns:48px minmax(0,1fr)!important}.services-filterbar>.service-category{grid-column:1/-1!important;max-width:none!important}.services-filterbar>.service-category:nth-child(2){grid-row:2!important}.services-filterbar>.service-category:nth-child(3){grid-row:3!important}.services-filterbar>.service-search-control{grid-column:1!important;grid-row:1!important}}
+
+
+/* Keep the Service category and price sort in separate, explicit grid cells. */
+.services-page .service-catalog-panel .services-filterbar{display:grid!important;grid-template-columns:48px minmax(150px,200px) minmax(150px,200px)!important;align-items:end!important;justify-content:start!important;grid-auto-flow:row!important;gap:12px!important}
+.services-page .service-catalog-panel .services-filterbar>.service-search-control{grid-column:1!important;grid-row:1!important}
+.services-page .service-catalog-panel .services-filterbar>.service-category:nth-child(2){grid-column:2!important;grid-row:1!important;width:100%!important;max-width:200px!important;min-width:0!important}
+.services-page .service-catalog-panel .services-filterbar>.service-category:nth-child(3){grid-column:3!important;grid-row:1!important;width:100%!important;max-width:200px!important;min-width:0!important}
+.services-page .service-catalog-panel .services-filterbar>.service-category>span{position:static!important;display:block!important;grid-row:1!important;line-height:14px!important}
+.services-page .service-catalog-panel .services-filterbar>.service-category>select{grid-row:2!important;width:100%!important;min-width:0!important;box-sizing:border-box!important}
+@media(max-width:900px){.services-page .service-catalog-panel .services-filterbar{grid-template-columns:48px minmax(140px,1fr) minmax(140px,1fr)!important}}
+@media(max-width:600px){.services-page .service-catalog-panel .services-filterbar{grid-template-columns:48px minmax(0,1fr)!important;gap:10px!important}.services-page .service-catalog-panel .services-filterbar>.service-search-control{grid-column:1!important;grid-row:1!important}.services-page .service-catalog-panel .services-filterbar>.service-category:nth-child(2){grid-column:1/-1!important;grid-row:2!important;max-width:none!important}.services-page .service-catalog-panel .services-filterbar>.service-category:nth-child(3){grid-column:1/-1!important;grid-row:3!important;max-width:none!important}}
