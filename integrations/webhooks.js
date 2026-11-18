@@ -3,7 +3,7 @@
 const net = require("node:net");
 const { createHmac } = require("node:crypto");
 
-const WEBHOOK_EVENTS = Object.freeze(["order.created", "booking.created"]);
+const WEBHOOK_EVENTS = Object.freeze(["order.created", "booking.created", "customer.registered"]);
 const PRIVATE_IPV4_CIDRS = Object.freeze([
   ["0.0.0.0", 8], ["10.0.0.0", 8], ["100.64.0.0", 10], ["127.0.0.0", 8],
   ["169.254.0.0", 16], ["172.16.0.0", 12], ["192.0.0.0", 24], ["192.0.2.0", 24],
