@@ -409,6 +409,39 @@ async function postWebhook(destination,secret,eventType,deliveryId,payload) {
     request.on("error",error=>{clearTimeout(timeout);reject(error)});request.end(body);
   });
 }
+function webhookMoney(value,currency="INR") {
+  const amount=Number(value||0);
+  return currency==="INR"?"₹"+amount.toFixed(2):currency+" "+amount.toFixed(2);
+}
+function webhookCustomerLines(customer={}) {
+  return [
+    "Customer: "+(customer.fullName||"—"),
+    "Email: "+(customer.email||"—"),
+    "Phone: "+(customer.phone||"—"),
+    "Address: "+[customer.address,customer.city,customer.postalCode].filter(Boolean).join(", ")
+  ];
+}
+function formatOrderWebhookSummary(order) {
+  const lines=["ORDER #"+order.orderId,"Status: "+order.status,"Created: "+order.createdAt,...webhookCustomerLines(order.customer),"Items:"];
+  for(const item of order.items||[])lines.push("- "+item.name+(item.sku?" · SKU "+item.sku:"")+" × "+item.quantity+" · "+webhookMoney(item.unitPrice,order.currency)+" each · line "+webhookMoney(item.lineTotal,order.currency));
+  lines.push("Subtotal: "+webhookMoney(order.subtotal,order.currency),"Shipping: "+webhookMoney(order.shippingTotal,order.currency),"Tax: "+webhookMoney(order.taxTotal,order.currency),"TOTAL: "+webhookMoney(order.total,order.currency));
+  return lines.join("\n");
+}
+function formatBookingWebhookSummary(booking) {
+  const lines=["BOOKING #"+booking.bookingId,"Status: "+booking.status,"Created: "+booking.createdAt,...webhookCustomerLines(booking.customer),"Service: "+(booking.service?.name||"—"),"Booking mode: "+(booking.service?.bookingMode||"—"),"Provider: "+(booking.provider?.name||"—"),"Date and time slot(s):"];
+  for(const slot of booking.bookingDates||[]){
+    if(booking.service?.bookingMode==="daily")lines.push("- "+slot.date+(slot.lastDate&&slot.lastDate!==slot.date?" to "+slot.lastDate:"")+" · all day ("+slot.durationDays+" day(s))");
+    else lines.push("- "+slot.date+" · "+slot.time+"–"+slot.endTime+" · "+slot.durationMinutes+" min · UTC "+slot.startsAt+" to "+slot.endsAt);
+  }
+  lines.push("Service unit price: "+webhookMoney(booking.service?.unitPrice,booking.currency),"Extras:");
+  if(booking.extras?.length){for(const extra of booking.extras)lines.push("- "+extra.name+" × "+extra.quantity+" · "+webhookMoney(extra.unitPrice,booking.currency)+" each"+(extra.pricePerDay?" per day":"")+" · line "+webhookMoney(extra.lineTotal,booking.currency))}
+  else lines.push("- None");
+  lines.push("Service subtotal: "+webhookMoney(booking.serviceSubtotal,booking.currency),"Extras subtotal: "+webhookMoney(booking.extrasSubtotal,booking.currency),"Subtotal: "+webhookMoney(booking.subtotal,booking.currency),"TOTAL: "+webhookMoney(booking.total,booking.currency),"Notes: "+(booking.notes||"None"));
+  return lines.join("\n");
+}
+function formatCustomerWebhookSummary(customer) {
+  return ["CUSTOMER REGISTRATION #"+customer.customerId,"Status: "+customer.status,"Registered: "+customer.registeredAt,"Name: "+(customer.customer?.fullName||"—"),"Email: "+(customer.customer?.email||"—")].join("\n");
+}
 async function enqueueWebhookEvent(eventType,data) {
   if(!dbReady||!WEBHOOK_EVENTS.includes(eventType))return;
   const [endpoints]=await dbPool.execute("SELECT id,events_json FROM webhook_endpoints WHERE active=1 ORDER BY id LIMIT 50");
@@ -530,7 +563,7 @@ async function api(req, res, url) {
       await conn.commit();
       clearAttempts(req, "verify-email-code");
       const [rows] = await conn.execute("SELECT id,name,email,role,email_verified FROM app_users WHERE id=?", [userId]);
-      if(rows[0]?.role==="customer"&&Number(rows[0].email_verified)===1)enqueueWebhookEvent("customer.registered",{customerId:Number(rows[0].id),status:"verified",registeredAt:new Date().toISOString(),customer:{fullName:rows[0].name,email:rows[0].email}}).catch(error=>console.error("Customer registration webhook enqueue failed:",error.message));
+      if(rows[0]?.role==="customer"&&Number(rows[0].email_verified)===1){const customerEvent={customerId:Number(rows[0].id),status:"verified",registeredAt:new Date().toISOString(),customer:{fullName:rows[0].name,email:rows[0].email}};customerEvent.summary=formatCustomerWebhookSummary(customerEvent);enqueueWebhookEvent("customer.registered",customerEvent).catch(error=>console.error("Customer registration webhook enqueue failed:",error.message));}
       return sendJson(res, 200, { message: "Email confirmed. You can now sign in.", role: rows[0].role });
     } catch (error) {
       await conn.rollback();
@@ -910,7 +943,7 @@ async function api(req, res, url) {
       const [result] = await conn.execute("INSERT INTO bookings (user_id,service_id,starts_at,notes,booking_dates_json,booking_extras_json,total_price,resource_id,customer_full_name,customer_phone,customer_address,customer_city,customer_postal_code) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", [session.user.id,serviceId,first,notes,JSON.stringify(bookingDates),JSON.stringify(extras.map(x=>({id:x.id,name:x.name,price:Number(x.price),salePrice:x.sale_price===null?null:Number(x.sale_price),unitPrice:Number(x.unitPrice),quantity:Number(x.quantity),maxQuantity:Number(x.max_quantity),imageUrl:x.image_url||null,durationMinutes:0,pricePerDay:Boolean(Number(x.price_per_day))}))),bookingTotal.toFixed(2),resourceId,fullName,phone,address,city,postalCode]);
       await conn.execute("UPDATE app_users SET name=?,phone=?,address=?,city=?,postal_code=? WHERE id=? AND role='customer'", [fullName,phone,address,city,postalCode,session.user.id]);
       await conn.commit();
-const serviceSubtotal=Number((Number(service.price||0)*occurrences.length).toFixed(2)),extrasTotal=Number((bookingTotal-serviceSubtotal).toFixed(2));enqueueWebhookEvent("booking.created",{bookingId:Number(result.insertId),status:"requested",createdAt:new Date().toISOString(),currency:"INR",customer:{fullName,email,phone,address,city,postalCode},service:{serviceId:Number(service.id),name:service.name,bookingMode:service.booking_mode,durationMinutes:Number(service.duration_minutes),unitPrice:Number(Number(service.price||0).toFixed(2))},provider:{resourceId:resourceId?Number(resourceId):null,name:resourceName},bookingDates:bookingDates.map(slot=>({date:slot.date,endDate:slot.endDate||null,time:slot.time,startsAt:slot.startsAt})),startsAt:bookingDates.map(slot=>slot.startsAt),extras:extras.map(extra=>{const quantity=Number(extra.quantity||1),unitPrice=Number(extra.unitPrice||0),pricePerDay=Boolean(Number(extra.price_per_day)),lineTotal=unitPrice*quantity*(pricePerDay?durationDays*occurrences.length:1);return {extraId:Number(extra.id),name:extra.name,quantity,unitPrice:Number(unitPrice.toFixed(2)),pricePerDay,lineTotal:Number(lineTotal.toFixed(2))}}),notes,total: Number(bookingTotal.toFixed(2)),subtotal:Number((serviceSubtotal+extrasTotal).toFixed(2)),serviceSubtotal,extrasSubtotal:extrasTotal}).catch(error=>console.error("Booking webhook enqueue failed:",error.message));
+const serviceSubtotal=Number((Number(service.price||0)*occurrences.length).toFixed(2)),extrasTotal=Number((bookingTotal-serviceSubtotal).toFixed(2));const bookingEvent={bookingId:Number(result.insertId),status:"requested",createdAt:new Date().toISOString(),currency:"INR",customer:{fullName,email,phone,address,city,postalCode},service:{serviceId:Number(service.id),name:service.name,bookingMode:service.booking_mode,durationMinutes:Number(service.duration_minutes),bufferMinutes:Number(service.buffer_minutes||0),unitPrice:Number(Number(service.price||0).toFixed(2))},provider:{resourceId:resourceId?Number(resourceId):null,name:resourceName},bookingDates:bookingDates.map(slot=>{const daily=service.booking_mode==="daily",endClock=slot.time&&/^\\d{2}:\\d{2}$/.test(slot.time)?(()=>{const parts=slot.time.split(":").map(Number),total=parts[0]*60+parts[1]+durationMinutes;return String(Math.floor(total/60)%24).padStart(2,"0")+":"+String(total%60).padStart(2,"0")})():null,lastDate=daily&&slot.endDate?new Date(Date.parse(slot.endDate+"T00:00:00Z")-86400000).toISOString().slice(0,10):slot.date;return {date:slot.date,endDate:slot.endDate||null,lastDate,time:slot.time,endTime:daily?null:endClock,startsAt:slot.startsAt,endsAt:daily?null:new Date(Date.parse(slot.startsAt)+durationMinutes*60000).toISOString(),durationMinutes:daily?null:durationMinutes,durationDays:daily?durationDays:null,bufferMinutes:daily?0:Number(service.buffer_minutes||0)}}),startsAt:bookingDates.map(slot=>slot.startsAt),extras:extras.map(extra=>{const quantity=Number(extra.quantity||1),unitPrice=Number(extra.unitPrice||0),pricePerDay=Boolean(Number(extra.price_per_day)),lineTotal=unitPrice*quantity*(pricePerDay?durationDays*occurrences.length:1);return {extraId:Number(extra.id),name:extra.name,quantity,unitPrice:Number(unitPrice.toFixed(2)),pricePerDay,lineTotal:Number(lineTotal.toFixed(2))}}),notes,total:Number(bookingTotal.toFixed(2)),subtotal:Number((serviceSubtotal+extrasTotal).toFixed(2)),serviceSubtotal,extrasSubtotal:extrasTotal};bookingEvent.summary=formatBookingWebhookSummary(bookingEvent);enqueueWebhookEvent("booking.created",bookingEvent).catch(error=>console.error("Booking webhook enqueue failed:",error.message));
       // The booking is committed; release its availability locks before email
       // and calendar integrations so slow external services do not hold slots.
       for (const lockName of locks) { try { await conn.execute("SELECT RELEASE_LOCK(?)", [lockName]); } catch (_) {} }
@@ -1000,7 +1033,7 @@ const serviceSubtotal=Number((Number(service.price||0)*occurrences.length).toFix
         }
       }
       await conn.commit();
-enqueueWebhookEvent("order.created",{orderId:Number(order.insertId),status:"new",createdAt:new Date().toISOString(),currency:"INR",customer:{fullName,email,phone,address,city,postalCode},items:lines.map(line=>({productId:Number(line.id),variantId:line.variantId?Number(line.variantId):null,name:line.displayName,sku:line.sku||null,imageUrl:line.imageUrl||null,productType:line.type,quantity:Number(line.quantity),unitPrice:Number(line.price.toFixed(2)),lineTotal:Number((line.price*line.quantity).toFixed(2))})),subtotal:Number(total.toFixed(2)),shippingTotal:0,taxTotal:0,total:Number(total.toFixed(2))}).catch(error=>console.error("Order webhook enqueue failed:",error.message));
+const orderEvent={orderId:Number(order.insertId),status:"new",createdAt:new Date().toISOString(),currency:"INR",customer:{fullName,email,phone,address,city,postalCode},items:lines.map(line=>({productId:Number(line.id),variantId:line.variantId?Number(line.variantId):null,name:line.displayName,sku:line.sku||null,imageUrl:line.imageUrl||null,productType:line.type,quantity:Number(line.quantity),unitPrice:Number(line.price.toFixed(2)),lineTotal:Number((line.price*line.quantity).toFixed(2))})),subtotal:Number(total.toFixed(2)),shippingTotal:0,taxTotal:0,total:Number(total.toFixed(2))};orderEvent.summary=formatOrderWebhookSummary(orderEvent);enqueueWebhookEvent("order.created",orderEvent).catch(error=>console.error("Order webhook enqueue failed:",error.message));
       let emailSent = false;
       if (process.env.SMTP_PASS) emailSent = await sendMail(email,"LuMekH order received","<p>Your order #"+order.insertId+" has been received. Total: ₹"+total.toFixed(2)+".</p><p>Payment will be confirmed separately.</p>");
       return sendJson(res,201,{message:"Order request saved. Payment will be confirmed separately.",orderId:order.insertId,total,emailSent});
