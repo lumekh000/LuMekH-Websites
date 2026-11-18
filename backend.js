@@ -439,8 +439,36 @@ function formatBookingWebhookSummary(booking) {
   lines.push("Service subtotal: "+webhookMoney(booking.serviceSubtotal,booking.currency),"Extras subtotal: "+webhookMoney(booking.extrasSubtotal,booking.currency),"Subtotal: "+webhookMoney(booking.subtotal,booking.currency),"TOTAL: "+webhookMoney(booking.total,booking.currency),"Notes: "+(booking.notes||"None"));
   return lines.join("\n");
 }
+async function buildWebhookTestData(eventType,recordId) {
+  const id=Number(recordId);
+  if(!Number.isSafeInteger(id)||id<1)throw Object.assign(new Error("Choose a valid existing record."),{statusCode:400});
+  if(eventType==="order.created"){
+    const [[row]]=await dbPool.execute("SELECT o.id,o.total,o.status,o.full_name,o.phone,o.address,o.city,o.postal_code,o.created_at,u.name AS account_name,u.email AS customer_email FROM orders o JOIN app_users u ON u.id=o.user_id WHERE o.id=? LIMIT 1",[id]);
+    if(!row)throw Object.assign(new Error("That order was not found."),{statusCode:404});
+    const [items]=await dbPool.execute("SELECT oi.product_id,oi.product_name,oi.quantity,oi.unit_price,(oi.quantity*oi.unit_price) AS line_total,p.product_type FROM order_items oi LEFT JOIN products p ON p.id=oi.product_id WHERE oi.order_id=? ORDER BY oi.id",[id]);
+    const total=Number(row.total||0),data={orderId:Number(row.id),status:row.status,createdAt:new Date(row.created_at).toISOString(),currency:"INR",customer:{fullName:row.full_name||row.account_name,email:row.customer_email,phone:row.phone||"",address:row.address||"",city:row.city||"",postalCode:row.postal_code||""},items:items.map(item=>({productId:Number(item.product_id),variantId:null,name:item.product_name,sku:null,imageUrl:null,productType:item.product_type||"physical",quantity:Number(item.quantity),unitPrice:Number(Number(item.unit_price||0).toFixed(2)),lineTotal:Number(Number(item.line_total||0).toFixed(2))})),subtotal:total,shippingTotal:0,taxTotal:0,total};
+    data.summary=formatOrderWebhookSummary(data);data.test=true;return data;
+  }
+  if(eventType==="booking.created"){
+    const [[row]]=await dbPool.execute("SELECT b.id,b.starts_at,b.booking_dates_json,b.booking_extras_json,b.total_price,b.status,b.notes,b.created_at,b.customer_full_name,b.customer_phone,b.customer_address,b.customer_city,b.customer_postal_code,u.name AS account_name,u.email AS customer_email,u.phone AS account_phone,u.address AS account_address,u.city AS account_city,u.postal_code AS account_postal_code,s.id AS service_id,s.name AS service_name,s.duration_minutes,s.buffer_minutes,s.booking_mode,s.price,r.id AS resource_id,r.name AS resource_name FROM bookings b JOIN app_users u ON u.id=b.user_id JOIN services s ON s.id=b.service_id LEFT JOIN booking_resources r ON r.id=b.resource_id WHERE b.id=? LIMIT 1",[id]);
+    if(!row)throw Object.assign(new Error("That booking was not found."),{statusCode:404});
+    let dateRows=[],extraRows=[];try{dateRows=JSON.parse(row.booking_dates_json||"[]")}catch(_){}try{extraRows=JSON.parse(row.booking_extras_json||"[]")}catch(_){}
+    const durationMinutes=Number(row.duration_minutes||0),daily=row.booking_mode==="daily",durationDays=dateRows.length?Math.max(1,...dateRows.map(slot=>{if(!slot.date||!slot.endDate)return 1;return Math.ceil((Date.parse(slot.endDate+"T00:00:00Z")-Date.parse(slot.date+"T00:00:00Z"))/86400000)})):1;
+    const bookingDates=(Array.isArray(dateRows)?dateRows:[]).map(slot=>{const date=slot.date||new Date(row.starts_at).toISOString().slice(0,10),startsAt=slot.startsAt||new Date(row.starts_at).toISOString(),lastDate=daily&&slot.endDate?new Date(Date.parse(slot.endDate+"T00:00:00Z")-86400000).toISOString().slice(0,10):date;let endTime=null,endsAt=null;if(!daily&&slot.time){const [hour,minute]=String(slot.time).split(":").map(Number),endMinutes=hour*60+minute+durationMinutes;endTime=String(Math.floor(endMinutes/60)%24).padStart(2,"0")+":"+String(endMinutes%60).padStart(2,"0");endsAt=new Date(Date.parse(startsAt)+durationMinutes*60000).toISOString()}return {date,endDate:slot.endDate||null,lastDate,time:slot.time||null,endTime,startsAt,endsAt,durationMinutes:daily?null:durationMinutes,durationDays:daily?durationDays:null,bufferMinutes:daily?0:Number(row.buffer_minutes||0)}});
+    const serviceUnitPrice=Number(Number(row.price||0).toFixed(2)),serviceSubtotal=Number((serviceUnitPrice*bookingDates.length).toFixed(2)),extras=(Array.isArray(extraRows)?extraRows:[]).map(extra=>{const quantity=Number(extra.quantity||1),unitPrice=Number(extra.unitPrice??extra.price??0),pricePerDay=Boolean(extra.pricePerDay??extra.price_per_day),lineTotal=Number((unitPrice*quantity*(pricePerDay?durationDays*bookingDates.length:1)).toFixed(2));return {extraId:Number(extra.id||extra.extraId||0)||null,name:extra.name||"Extra",quantity,unitPrice:Number(unitPrice.toFixed(2)),pricePerDay,lineTotal}});
+    const extrasSubtotal=Number((Number(row.total_price||0)-serviceSubtotal).toFixed(2)),data={bookingId:Number(row.id),status:row.status,createdAt:new Date(row.created_at).toISOString(),currency:"INR",customer:{fullName:row.customer_full_name||row.account_name,email:row.customer_email,phone:row.customer_phone||row.account_phone||"",address:row.customer_address||row.account_address||"",city:row.customer_city||row.account_city||"",postalCode:row.customer_postal_code||row.account_postal_code||""},service:{serviceId:Number(row.service_id),name:row.service_name,bookingMode:row.booking_mode,durationMinutes,bufferMinutes:Number(row.buffer_minutes||0),unitPrice:serviceUnitPrice},provider:{resourceId:row.resource_id?Number(row.resource_id):null,name:row.resource_name||""},bookingDates,startsAt:bookingDates.map(slot=>slot.startsAt),extras,notes:row.notes||"",total:Number(Number(row.total_price||0).toFixed(2)),subtotal:Number(Number(row.total_price||0).toFixed(2)),serviceSubtotal,extrasSubtotal};
+    data.summary=formatBookingWebhookSummary(data);data.test=true;return data;
+  }
+  if(eventType==="customer.registered"){
+    const [[row]]=await dbPool.execute("SELECT id,name,email,phone,address,city,postal_code,email_verified,created_at FROM app_users WHERE id=? AND role='customer' AND is_deleted=0 AND email_verified=1 LIMIT 1",[id]);
+    if(!row)throw Object.assign(new Error("That verified customer was not found."),{statusCode:404});
+    const data={customerId:Number(row.id),status:"verified",registeredAt:new Date(row.created_at).toISOString(),customer:{fullName:row.name,email:row.email,phone:row.phone||"",address:row.address||"",city:row.city||"",postalCode:row.postal_code||""}};
+    data.summary=formatCustomerWebhookSummary(data);data.test=true;return data;
+  }
+  throw Object.assign(new Error("Choose a supported webhook event."),{statusCode:400});
+}
 function formatCustomerWebhookSummary(customer) {
-  return ["CUSTOMER REGISTRATION #"+customer.customerId,"Status: "+customer.status,"Registered: "+customer.registeredAt,"Name: "+(customer.customer?.fullName||"—"),"Email: "+(customer.customer?.email||"—")].join("\n");
+  return ["CUSTOMER REGISTRATION #"+customer.customerId,"Status: "+customer.status,"Registered: "+customer.registeredAt,...webhookCustomerLines(customer.customer)].join("\n");
 }
 async function enqueueWebhookEvent(eventType,data) {
   if(!dbReady||!WEBHOOK_EVENTS.includes(eventType))return;
@@ -562,8 +590,8 @@ async function api(req, res, url) {
       }
       await conn.commit();
       clearAttempts(req, "verify-email-code");
-      const [rows] = await conn.execute("SELECT id,name,email,role,email_verified FROM app_users WHERE id=?", [userId]);
-      if(rows[0]?.role==="customer"&&Number(rows[0].email_verified)===1){const customerEvent={customerId:Number(rows[0].id),status:"verified",registeredAt:new Date().toISOString(),customer:{fullName:rows[0].name,email:rows[0].email}};customerEvent.summary=formatCustomerWebhookSummary(customerEvent);enqueueWebhookEvent("customer.registered",customerEvent).catch(error=>console.error("Customer registration webhook enqueue failed:",error.message));}
+      const [rows] = await conn.execute("SELECT id,name,email,phone,address,city,postal_code,role,email_verified,created_at FROM app_users WHERE id=?", [userId]);
+      if(rows[0]?.role==="customer"&&Number(rows[0].email_verified)===1){const customerEvent={customerId:Number(rows[0].id),status:"verified",registeredAt:new Date().toISOString(),customer:{fullName:rows[0].name,email:rows[0].email,phone:rows[0].phone||"",address:rows[0].address||"",city:rows[0].city||"",postalCode:rows[0].postal_code||""}};customerEvent.summary=formatCustomerWebhookSummary(customerEvent);enqueueWebhookEvent("customer.registered",customerEvent).catch(error=>console.error("Customer registration webhook enqueue failed:",error.message));}
       return sendJson(res, 200, { message: "Email confirmed. You can now sign in.", role: rows[0].role });
     } catch (error) {
       await conn.rollback();
@@ -1104,9 +1132,42 @@ const orderEvent={orderId:Number(order.insertId),status:"new",createdAt:new Date
       const [result]=await dbPool.execute("INSERT INTO webhook_endpoints (name,endpoint_url,events_json,secret_enc) VALUES (?,?,?,?)",[name,new URL(url).toString(),JSON.stringify(events),encryptGoogleToken(secret)]);
       return sendJson(res,201,{message:"Webhook added. Copy the signing secret now; it will not be shown again.",webhook:{id:result.insertId,name,url:new URL(url).toString(),events,active:true},secret});
     }
+    if(req.method==="GET"&&route==="/api/admin/integrations/webhooks/records"){
+      const eventType=String(url.searchParams.get("eventType")||"");
+      if(!WEBHOOK_EVENTS.includes(eventType))return sendError(res,400,"Choose a supported webhook event.");
+      let records=[];
+      if(eventType==="order.created"){
+        const [rows]=await dbPool.execute("SELECT o.id,o.status,o.full_name,o.created_at,o.total,u.name AS account_name FROM orders o JOIN app_users u ON u.id=o.user_id ORDER BY o.created_at DESC LIMIT 100");
+        records=rows.map(row=>({id:Number(row.id),label:"#"+row.id+" · "+(row.full_name||row.account_name||"Customer")+" · "+row.status+" · "+new Date(row.created_at).toLocaleDateString("en-IN",{timeZone:"Asia/Kolkata"})+" · "+webhookMoney(row.total)}));
+      }else if(eventType==="booking.created"){
+        const [rows]=await dbPool.execute("SELECT b.id,b.status,b.customer_full_name,b.starts_at,b.total_price,COALESCE(NULLIF(s.name,''),'Service') AS service_name,COALESCE(NULLIF(b.customer_full_name,''),u.name) AS account_name FROM bookings b JOIN app_users u ON u.id=b.user_id JOIN services s ON s.id=b.service_id ORDER BY b.created_at DESC LIMIT 100");
+        records=rows.map(row=>({id:Number(row.id),label:"#"+row.id+" · "+row.service_name+" · "+(row.customer_full_name||row.account_name||"Customer")+" · "+row.status+" · "+new Date(row.starts_at).toLocaleDateString("en-IN",{timeZone:"Asia/Kolkata"})+" · "+webhookMoney(row.total_price)}));
+      }else{
+        const [rows]=await dbPool.execute("SELECT id,name,email,created_at FROM app_users WHERE role='customer' AND is_deleted=0 AND email_verified=1 ORDER BY created_at DESC LIMIT 100");
+        records=rows.map(row=>({id:Number(row.id),label:(row.name||"Customer")+" · "+row.email+" · registered "+new Date(row.created_at).toLocaleDateString("en-IN",{timeZone:"Asia/Kolkata"})}));
+      }
+      return sendJson(res,200,{eventType,records});
+    }
     const webhookRoute=route.match(/^\/api\/admin\/integrations\/webhooks\/(\d+)(?:\/(rotate|test))?$/);
     if(webhookRoute&&req.method==="DELETE"&&!webhookRoute[2]){const [result]=await dbPool.execute("DELETE FROM webhook_endpoints WHERE id=?",[Number(webhookRoute[1])]);return result.affectedRows?sendJson(res,200,{message:"Webhook deleted. Its delivery history was also removed."}):sendError(res,404,"Webhook endpoint not found.");}
-    if(webhookRoute&&webhookRoute[2]==="test"&&req.method==="POST"){const [[endpoint]]=await dbPool.execute("SELECT id,name,endpoint_url,secret_enc FROM webhook_endpoints WHERE id=? AND active=1 LIMIT 1",[Number(webhookRoute[1])]);if(!endpoint)return sendError(res,404,"Enable this webhook before sending a test.");const payload={id:randomBytes(16).toString("hex"),type:"webhook.test",createdAt:new Date().toISOString(),data:{message:"LuMekH webhook test delivery",test:true}},[result]=await dbPool.execute("INSERT INTO webhook_deliveries (endpoint_id,event_type,payload_json,status,attempts,next_attempt_at) VALUES (?,'webhook.test',?,'delivering',1,UTC_TIMESTAMP())",[endpoint.id,JSON.stringify(payload)]),deliveryId=result.insertId;try{const status=await postWebhook(endpoint.endpoint_url,decryptGoogleToken(endpoint.secret_enc),"webhook.test",String(deliveryId),payload);if(status<200||status>=300){await dbPool.execute("UPDATE webhook_deliveries SET status='failed',response_status=? WHERE id=?",[status,deliveryId]);return sendError(res,502,"Test delivery failed: endpoint returned HTTP "+status+". Check n8n is listening on this exact Test URL.")}await dbPool.execute("UPDATE webhook_deliveries SET status='delivered',response_status=?,delivered_at=UTC_TIMESTAMP() WHERE id=?",[status,deliveryId]);return sendJson(res,200,{message:"Test delivered successfully (HTTP "+status+"). Check the n8n output.",deliveryId,responseStatus:status})}catch(error){const status=Number(error.statusCode)||null;await dbPool.execute("UPDATE webhook_deliveries SET status='failed',response_status=? WHERE id=?",[status,deliveryId]);const detail=status?"HTTP "+status:String(error.message||"Network error");return sendError(res,502,"Test delivery failed: "+detail+". Check the endpoint URL and n8n listener.")}}
+    if(webhookRoute&&webhookRoute[2]==="test"&&req.method==="POST"){
+      const body=await readJson(req),eventType=String(body.eventType||""),recordId=Number(body.recordId);
+      if(!WEBHOOK_EVENTS.includes(eventType))return sendError(res,400,"Choose an existing order, booking, or customer to test.");
+      const [[endpoint]]=await dbPool.execute("SELECT id,name,endpoint_url,secret_enc,events_json FROM webhook_endpoints WHERE id=? AND active=1 LIMIT 1",[Number(webhookRoute[1])]);
+      if(!endpoint)return sendError(res,404,"Enable this webhook before sending a test.");
+      let subscribedEvents=[];try{subscribedEvents=JSON.parse(endpoint.events_json||"[]")}catch(_){}
+      if(!Array.isArray(subscribedEvents)||!subscribedEvents.includes(eventType))return sendError(res,400,"This endpoint is not subscribed to "+eventType+". Edit it to enable this event first.");
+      let data;try{data=await buildWebhookTestData(eventType,recordId)}catch(error){return sendError(res,Number(error.statusCode)||500,error.message||"Could not load that existing record.")}
+      const payload={id:randomBytes(16).toString("hex"),type:eventType,createdAt:new Date().toISOString(),test:true,data},[result]=await dbPool.execute("INSERT INTO webhook_deliveries (endpoint_id,event_type,payload_json,status,attempts,next_attempt_at) VALUES (?,?,?,'delivering',1,UTC_TIMESTAMP())",[endpoint.id,eventType,JSON.stringify(payload)]),deliveryId=result.insertId;
+      try{
+        const status=await postWebhook(endpoint.endpoint_url,decryptGoogleToken(endpoint.secret_enc),eventType,String(deliveryId),payload);
+        if(status<200||status>=300){await dbPool.execute("UPDATE webhook_deliveries SET status='failed',response_status=? WHERE id=?",[status,deliveryId]);return sendError(res,502,"Test delivery failed: endpoint returned HTTP "+status+". Check n8n is listening on this exact Test URL.")}
+        await dbPool.execute("UPDATE webhook_deliveries SET status='delivered',response_status=?,delivered_at=UTC_TIMESTAMP() WHERE id=?",[status,deliveryId]);
+        return sendJson(res,200,{message:"Test sent using existing "+eventType.replace(".created","").replace("customer.registered","customer")+" #"+recordId+" (HTTP "+status+"). Check n8n output.",deliveryId,responseStatus:status,eventType,recordId});
+      }catch(error){
+        const status=Number(error.statusCode)||null;await dbPool.execute("UPDATE webhook_deliveries SET status='failed',response_status=? WHERE id=?",[status,deliveryId]);const detail=status?"HTTP "+status:String(error.message||"Network error");return sendError(res,502,"Test delivery failed: "+detail+". Check the endpoint URL and n8n listener.");
+      }
+    }
     if(webhookRoute&&req.method==="PATCH"&&!webhookRoute[2]){
       const body=await readJson(req),endpointId=Number(webhookRoute[1]);
       if(typeof body.active==="boolean"){
