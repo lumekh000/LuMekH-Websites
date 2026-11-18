@@ -549,23 +549,24 @@ async function api(req, res, url) {
     const body = await readJson(req);
     const name = cleanText(body.name, 120);
     const email = cleanText(body.email, 254).toLowerCase();
-    const phone = cleanText(body.phone, 40);
+    const submittedPhone = cleanText(body.phone, 40);
+    const phoneDigits = submittedPhone.replace(/\\D/g, "");
+    const phone = phoneDigits.length === 10 ? "+91" + phoneDigits : phoneDigits.length === 12 && phoneDigits.startsWith("91") ? "+" + phoneDigits : submittedPhone;
     const password = String(body.password || "");
-    if (name.length < 2 || !validEmail(email) || !validPhone(phone) || password.length < 10) return sendError(res, 400, "Enter your name, a valid email, a mobile number with 10 to 15 digits, and a password with at least 10 characters.");
+    if (name.length < 2 || !validEmail(email) || !validPhone(phone) || password.length < 10) return sendError(res, 400, "Enter your name, a valid email, an Indian mobile number with 10 digits, and a password with at least 10 characters.");
     const passwordHash = await hashPassword(password);
     const conn = await dbPool.getConnection();
     try {
       await conn.beginTransaction();
       const [result] = await conn.execute("INSERT INTO app_users (name,email,phone,password_hash,email_verified) VALUES (?,?,?,?,0)", [name, email, phone, passwordHash]);
       const userId = Number(result.insertId);
-      const token = randomBytes(32).toString("hex");
-      await conn.execute("INSERT INTO email_tokens (token_hash,user_id,purpose,expires_at) VALUES (?,?,'verify',DATE_ADD(UTC_TIMESTAMP(), INTERVAL 24 HOUR))", [hashToken(token), userId]);
-      const link = originFor(req) + "/Verify-Email?token=" + encodeURIComponent(token);
+      const code = String(randomInt(0, 10000)).padStart(4, "0");
+      await conn.execute("INSERT INTO email_tokens (token_hash,user_id,purpose,expires_at) VALUES (?,?,'verify',DATE_ADD(UTC_TIMESTAMP(), INTERVAL 15 MINUTE))", [hashToken(code), userId]);
       const logo = originFor(req) + "/assets/lumekh-logo.png";
-      const html = "<div style='margin:0;padding:36px 14px;background:#fff8ef;font-family:Arial,Helvetica,sans-serif;color:#22212a'><table role='presentation' cellpadding='0' cellspacing='0' style='width:100%;max-width:600px;margin:0 auto;background:#fff;border:1px solid #f0dfcf;border-radius:22px;overflow:hidden'><tr><td style='padding:24px 30px;background:#111114;color:#fff'><img src='" + logo + "' width='48' height='48' alt='LuMekH logo' style='display:inline-block;vertical-align:middle;margin-right:12px;border:0'><span style='display:inline-block;vertical-align:middle;font-size:22px;font-weight:700'>LuMekH™<span style='display:block;margin-top:4px;color:#f4c7d6;font-size:10px;font-weight:600;letter-spacing:2px'>LOVE WE MAKE</span></span></td></tr><tr><td style='padding:36px 30px 30px'><p style='margin:0 0 10px;color:#e64f3d;font-size:11px;font-weight:700;letter-spacing:2px'>CUSTOMER ACCOUNT</p><h1 style='margin:0 0 14px;color:#19191d;font-size:28px;line-height:1.2'>Confirm your email</h1><p style='margin:0;color:#66636d;font-size:16px;line-height:1.65'>Click below to confirm your email address and finish creating your LuMekH account.</p><table role='presentation' cellpadding='0' cellspacing='0' style='margin:26px 0'><tr><td style='border-radius:999px;background:#ed5039'><a href='" + link + "' style='display:inline-block;padding:15px 28px;border:1px solid #ed5039;border-radius:999px;color:#fff;text-decoration:none;font-size:15px;font-weight:700'>Confirm email</a></td></tr></table><p style='margin:0;color:#716d76;font-size:14px;line-height:1.6'>This link expires in 24 hours and can only be used once.</p><p style='margin:24px 0 0;color:#9a969e;font-size:12px;line-height:1.6'>If the button doesn’t work, copy and paste this link into your browser:<br><a href='" + link + "' style='color:#6554be;word-break:break-all'>" + link + "</a></p></td></tr><tr><td style='padding:17px 30px;background:#faf8f6;border-top:1px solid #f0ebe5;color:#89858d;font-size:12px'>© 2026 LuMekH™ · Love We Make</td></tr></table></div>";
-      await sendMail(email, "Confirm your LuMekH email", html);
+      const html = "<div style='margin:0;padding:36px 14px;background:#fff8ef;font-family:Arial,Helvetica,sans-serif;color:#22212a'><table role='presentation' cellpadding='0' cellspacing='0' style='width:100%;max-width:600px;margin:0 auto;background:#fff;border:1px solid #f0dfcf;border-radius:22px;overflow:hidden'><tr><td style='padding:24px 30px;background:#111114;color:#fff'><img src='" + logo + "' width='48' height='48' alt='LuMekH logo' style='display:inline-block;vertical-align:middle;margin-right:12px;border:0'><span style='display:inline-block;vertical-align:middle;font-size:22px;font-weight:700'>LuMekH™<span style='display:block;margin-top:4px;color:#f4c7d6;font-size:10px;font-weight:600;letter-spacing:2px'>LOVE WE MAKE</span></span></td></tr><tr><td style='padding:36px 30px 30px'><p style='margin:0 0 10px;color:#e64f3d;font-size:11px;font-weight:700;letter-spacing:2px'>CUSTOMER ACCOUNT</p><h1 style='margin:0 0 14px;color:#19191d;font-size:28px;line-height:1.2'>Your email confirmation code</h1><p style='margin:0;color:#66636d;font-size:16px;line-height:1.65'>Enter this 4-digit code on LuMekH to confirm your email address and finish creating your account.</p><div style='margin:26px 0;padding:18px 24px;border:1px solid #f0dfcf;border-radius:14px;background:#fff8ef;color:#19191d;font-size:34px;font-weight:700;letter-spacing:12px;text-align:center'>" + code + "</div><p style='margin:0;color:#716d76;font-size:14px;line-height:1.6'>This code expires in 15 minutes and can only be used once. You do not need to verify your mobile number.</p></td></tr><tr><td style='padding:17px 30px;background:#faf8f6;border-top:1px solid #f0ebe5;color:#89858d;font-size:12px'>© 2026 LuMekH™ · Love We Make</td></tr></table></div>";
+      await sendMail(email, "Your LuMekH email confirmation code", html);
       await conn.commit();
-      return sendJson(res, 201, { message: "Account created. Check your email and confirm the link before signing in." });
+      return sendJson(res, 201, { message: "Account created. Enter the 4-digit code sent to your email. It expires in 15 minutes." });
     } catch (error) {
       await conn.rollback();
       if (error && error.code === "ER_DUP_ENTRY") return sendError(res, 409, "An account already exists for that email.");
@@ -576,9 +577,11 @@ async function api(req, res, url) {
   if (req.method === "POST" && route === "/api/auth/verify") {
     if (!dbReady) return sendError(res, 503, "Account setup is still being prepared.");
     const body = await readJson(req);
-    const token = String(body.token || body.code || "");
-    if (!/^[a-f0-9]{64}$/i.test(token)) return sendError(res, 400, "This confirmation link is invalid or expired.");
-    if (!allowLogin(req, "verify-email-link")) return sendError(res, 429, "Too many confirmation attempts. Please wait 15 minutes.");
+    const token = String(body.token || body.code || "").trim();
+    const isCode = /^\\d{4}$/.test(token);
+    const isLegacyLinkToken = /^[a-f0-9]{64}$/i.test(token);
+    if (!isCode && !isLegacyLinkToken) return sendError(res, 400, "Enter the 4-digit code from your email.");
+    if (!allowLogin(req, "verify-email-code")) return sendError(res, 429, "Too many confirmation attempts. Please wait 15 minutes.");
     const conn = await dbPool.getConnection();
     try {
       await conn.beginTransaction();
@@ -593,7 +596,7 @@ async function api(req, res, url) {
         await conn.execute("UPDATE app_users SET role='admin' WHERE id=?", [userId]);
       }
       await conn.commit();
-      clearAttempts(req, "verify-email-link");
+      clearAttempts(req, "verify-email-code");
       const [rows] = await conn.execute("SELECT id,name,email,phone,address,city,postal_code,role,email_verified,created_at FROM app_users WHERE id=?", [userId]);
       if(rows[0]?.role==="customer"&&Number(rows[0].email_verified)===1){const customerEvent={customerId:Number(rows[0].id),status:"verified",registeredAt:new Date().toISOString(),customer:{fullName:rows[0].name,email:rows[0].email,phone:rows[0].phone||"",address:rows[0].address||"",city:rows[0].city||"",postalCode:rows[0].postal_code||""}};customerEvent.summary=formatCustomerWebhookSummary(customerEvent);enqueueWebhookEvent("customer.registered",customerEvent).catch(error=>console.error("Customer registration webhook enqueue failed:",error.message));}
       return sendJson(res, 200, { message: "Email confirmed. You can now sign in.", role: rows[0].role });
@@ -1634,6 +1637,7 @@ const cleanPageRoutes = Object.freeze({
   "/forgot-password": { file: "forgot-password.html", path: "/Forgot-Password" },
   "/reset-password": { file: "reset-password.html", path: "/Reset-Password" },
   "/verify": { file: "verify.html", path: "/Verify" },
+  "/verify-email": { file: "verify.html", path: "/Verify" },
   "/admin/crm": { file: "admin/crm.html", path: "/Admin/CRM" },
   "/admin/integrations": { file: "admin/integrations.html", path: "/Admin/Integrations" },
   "/admin/products": { file: "admin/products.html", path: "/Admin/Products" },
