@@ -292,6 +292,16 @@ async function sendMail(to, subject, html) {
   await transport.sendMail({ from: process.env.MAIL_FROM || "LuMekH™ <noreply@lumekh.com>", to, subject, html });
   return true;
 }
+function escapeHtml(value) {
+  return String(value || "").replace(/[&<>"']/g, char => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]));
+}
+async function sendCustomerWelcomeEmail(user, origin) {
+  const name = escapeHtml(user.name || "there");
+  const accountUrl = origin + "/My-Account";
+  const storeUrl = origin + "/Store";
+  const html = "<div style='margin:0;padding:36px 14px;background:#fff8ef;font-family:Arial,Helvetica,sans-serif;color:#22212a'><table role='presentation' cellpadding='0' cellspacing='0' style='width:100%;max-width:600px;margin:0 auto;background:#fff;border:1px solid #f0dfcf;border-radius:22px;overflow:hidden'><tr><td style='padding:24px 30px;background:#111114;color:#fff'><img src='" + origin + "/assets/lumekh-logo.png' width='48' height='48' alt='LuMekH logo' style='display:inline-block;vertical-align:middle;margin-right:12px;border:0'><span style='display:inline-block;vertical-align:middle;font-size:22px;font-weight:700'>LuMekH™<span style='display:block;margin-top:4px;color:#f4c7d6;font-size:10px;font-weight:600;letter-spacing:2px'>LOVE WE MAKE</span></span></td></tr><tr><td style='padding:36px 30px 30px'><p style='margin:0 0 10px;color:#e64f3d;font-size:11px;font-weight:700;letter-spacing:2px'>CUSTOMER ACCOUNT</p><h1 style='margin:0 0 14px;color:#19191d;font-size:28px;line-height:1.2'>Welcome to LuMekH, " + name + "!</h1><p style='margin:0;color:#66636d;font-size:16px;line-height:1.65'>Your email is confirmed and your customer account is ready. You can sign in to manage your details, orders and bookings.</p><table role='presentation' cellpadding='0' cellspacing='0' style='margin:26px 0'><tr><td style='border-radius:999px;background:#ed5039'><a href='" + accountUrl + "' style='display:inline-block;padding:15px 28px;border:1px solid #ed5039;border-radius:999px;color:#fff;text-decoration:none;font-size:15px;font-weight:700'>Visit my account</a></td><td style='padding-left:12px'><a href='" + storeUrl + "' style='color:#26232a;text-decoration:underline;font-size:15px;font-weight:700'>Explore the store</a></td></tr></table><p style='margin:0;color:#716d76;font-size:14px;line-height:1.6'>Thank you for joining LuMekH™. Love We Make.</p></td></tr><tr><td style='padding:17px 30px;background:#faf8f6;border-top:1px solid #f0ebe5;color:#89858d;font-size:12px'>© 2026 LuMekH™ · Love We Make</td></tr></table></div>";
+  await sendMail(user.email, "Welcome to LuMekH", html);
+}
 function originFor(req) {
   return publicOrigin;
 }
@@ -648,7 +658,7 @@ async function api(req, res, url) {
       await conn.commit();
       clearAttempts(req, "verify-email-code");
       const [rows] = await conn.execute("SELECT id,name,email,phone,address,city,postal_code,role,email_verified,created_at FROM app_users WHERE id=?", [userId]);
-      if(rows[0]?.role==="customer"&&Number(rows[0].email_verified)===1){const customerEvent={customerId:Number(rows[0].id),status:"verified",registeredAt:new Date().toISOString(),customer:{fullName:rows[0].name,email:rows[0].email,phone:rows[0].phone||"",address:rows[0].address||"",city:rows[0].city||"",postalCode:rows[0].postal_code||""}};customerEvent.summary=formatCustomerWebhookSummary(customerEvent);enqueueWebhookEvent("customer.registered",customerEvent).catch(error=>console.error("Customer registration webhook enqueue failed:",error.message));}
+      if(rows[0]?.role==="customer"&&Number(rows[0].email_verified)===1){sendCustomerWelcomeEmail(rows[0],originFor(req)).catch(error=>console.error("Customer welcome email failed:",error.message));const customerEvent={customerId:Number(rows[0].id),status:"verified",registeredAt:new Date().toISOString(),customer:{fullName:rows[0].name,email:rows[0].email,phone:rows[0].phone||"",address:rows[0].address||"",city:rows[0].city||"",postalCode:rows[0].postal_code||""}};customerEvent.summary=formatCustomerWebhookSummary(customerEvent);enqueueWebhookEvent("customer.registered",customerEvent).catch(error=>console.error("Customer registration webhook enqueue failed:",error.message));}
       return sendJson(res, 200, { message: "Email confirmed. You can now sign in.", role: rows[0].role });
     } catch (error) {
       await conn.rollback();
