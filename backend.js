@@ -84,7 +84,7 @@ function brandedInvoicePdf({title,number,date,status,customer,email,phone,addres
 
 
 const schema = [
-  "CREATE TABLE IF NOT EXISTS app_users (id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, name VARCHAR(120) NOT NULL, email VARCHAR(254) NOT NULL UNIQUE, password_hash VARCHAR(255) NOT NULL, role ENUM('customer','admin') NOT NULL DEFAULT 'customer', email_verified TINYINT(1) NOT NULL DEFAULT 0, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, INDEX idx_users_created (created_at)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+  "CREATE TABLE IF NOT EXISTS app_users (id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, name VARCHAR(120) NOT NULL, email VARCHAR(254) NOT NULL UNIQUE, phone VARCHAR(40) NOT NULL DEFAULT '', password_hash VARCHAR(255) NOT NULL, role ENUM('customer','admin') NOT NULL DEFAULT 'customer', email_verified TINYINT(1) NOT NULL DEFAULT 0, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, INDEX idx_users_created (created_at)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
   "CREATE TABLE IF NOT EXISTS app_sessions (token_hash CHAR(64) NOT NULL PRIMARY KEY, user_id BIGINT UNSIGNED NOT NULL, csrf_token CHAR(64) NOT NULL, expires_at DATETIME NOT NULL, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, INDEX idx_sessions_user (user_id), INDEX idx_sessions_expiry (expires_at), CONSTRAINT fk_sessions_user FOREIGN KEY (user_id) REFERENCES app_users(id) ON DELETE CASCADE) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
   "CREATE TABLE IF NOT EXISTS email_tokens (token_hash CHAR(64) NOT NULL PRIMARY KEY, user_id BIGINT UNSIGNED NOT NULL, purpose ENUM('verify','reset') NOT NULL, expires_at DATETIME NOT NULL, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, INDEX idx_email_tokens_user (user_id), CONSTRAINT fk_email_tokens_user FOREIGN KEY (user_id) REFERENCES app_users(id) ON DELETE CASCADE) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
   "CREATE TABLE IF NOT EXISTS products (id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, name VARCHAR(160) NOT NULL, description TEXT NOT NULL, price DECIMAL(10,2) NOT NULL, stock INT NULL, image_url VARCHAR(1000) NULL, active TINYINT(1) NOT NULL DEFAULT 1, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, INDEX idx_products_active (active, created_at)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
@@ -265,6 +265,7 @@ async function readRaw(req, limit) {
 }
 function cleanText(value, max) { return String(value || "").trim().slice(0, max); }
 function validEmail(value) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) && value.length <= 254; }
+function validPhone(value) { const phone=String(value||"").trim(); const digits=phone.replace(/\D/g,""); return /^\+?[0-9().\s-]{10,24}$/.test(phone) && digits.length>=10 && digits.length<=15; }
 function mailTransport() {
   if (!process.env.SMTP_PASS) return null;
   return nodemailer.createTransport({
@@ -544,24 +545,23 @@ async function api(req, res, url) {
 
   if (req.method === "POST" && route === "/api/auth/register") {
     if (!dbReady) return sendError(res, 503, "Account setup is still being prepared. Please try again shortly.");
-    if (!process.env.SMTP_PASS) return sendError(res, 503, "Hostinger email is not connected yet. Please try again after email setup.");
     const body = await readJson(req);
     const name = cleanText(body.name, 120);
     const email = cleanText(body.email, 254).toLowerCase();
+    const phone = cleanText(body.phone, 40);
     const password = String(body.password || "");
-    if (name.length < 2 || !validEmail(email) || password.length < 10) return sendError(res, 400, "Enter your name, a valid email, and a password with at least 10 characters.");
+    if (name.length < 2 || !validEmail(email) || !validPhone(phone) || password.length < 10) return sendError(res, 400, "Enter your name, a valid email, a mobile number with 10 to 15 digits, and a password with at least 10 characters.");
     const passwordHash = await hashPassword(password);
-    const otp = String(randomInt(100000, 1000000));
     const conn = await dbPool.getConnection();
     try {
       await conn.beginTransaction();
-      const [result] = await conn.execute("INSERT INTO app_users (name,email,password_hash) VALUES (?,?,?)", [name, email, passwordHash]);
-      await conn.execute("INSERT INTO email_tokens (token_hash,user_id,purpose,expires_at) VALUES (?,?,'verify',DATE_ADD(UTC_TIMESTAMP(), INTERVAL 10 MINUTE))", [hashToken(otp), result.insertId]);
-      const logo = originFor(req) + "/assets/lumekh-logo.png";
-      const html = "<div style='margin:0;background:#fff8ef;padding:36px 16px;font-family:Arial,sans-serif;color:#202027'><div style='max-width:520px;margin:auto;background:#fff;border:1px solid #f0dfcf;border-radius:22px;overflow:hidden'><div style='padding:24px 28px;background:#111;color:#fff'><img src='" + logo + "' alt='LuMekH' width='52' height='52' style='vertical-align:middle;margin-right:12px'><span style='display:inline-block;vertical-align:middle;font-size:22px;font-weight:700'>LuMekH™<small style='display:block;font-size:11px;letter-spacing:2px;color:#f6cbd9'>LOVE WE MAKE</small></span></div><div style='padding:32px 28px'><p style='color:#ef5038;font-size:12px;font-weight:bold;letter-spacing:2px'>WELCOME TO LUMEKH</p><h1 style='font-size:26px;margin:8px 0 12px'>Confirm your email</h1><p style='color:#666;line-height:1.6'>Enter this one-time code to finish creating your account.</p><div style='margin:24px 0;padding:18px;text-align:center;background:#fff4f7;border:1px solid #f5d3df;border-radius:14px;font-size:34px;font-weight:bold;letter-spacing:8px;color:#17171b'>" + otp + "</div><p style='color:#666;font-size:14px'>This code expires in 10 minutes. If you didn’t create a LuMekH account, you can ignore this email.</p></div><div style='padding:16px 28px;background:#faf8f6;color:#888;font-size:12px'>© 2026 LuMekH™ · Love We Make</div></div></div>";
-      await sendMail(email, "Your LuMekH verification code", html);
+      const [result] = await conn.execute("INSERT INTO app_users (name,email,phone,password_hash,email_verified) VALUES (?,?,?,?,1)", [name, email, phone, passwordHash]);
       await conn.commit();
-      return sendJson(res, 201, { message: "Account created. Enter the 6-digit code sent to your email.", email });
+      const userId=Number(result.insertId),csrfToken=await createSession(res,userId);
+      const customerEvent={customerId:userId,status:"verified",registeredAt:new Date().toISOString(),customer:{fullName:name,email,phone,address:"",city:"",postalCode:""}};
+      customerEvent.summary=formatCustomerWebhookSummary(customerEvent);
+      enqueueWebhookEvent("customer.registered",customerEvent).catch(error=>console.error("Customer registration webhook enqueue failed:",error.message));
+      return sendJson(res, 201, { message: "Account created. You are signed in.", user:{id:userId,name,email,role:"customer"}, csrfToken });
     } catch (error) {
       await conn.rollback();
       if (error && error.code === "ER_DUP_ENTRY") return sendError(res, 409, "An account already exists for that email.");
@@ -611,7 +611,7 @@ async function api(req, res, url) {
       const failures=recordLoginFailure(req,email);
       return sendError(res,failures>=8?429:401,failures>=8?"Too many incorrect sign-in attempts. Try again later.":"Email or password is incorrect.");
     }
-    if (!rows[0].email_verified) return sendError(res, 403, "Confirm your email before signing in.");
+    if (!rows[0].email_verified && rows[0].role !== "customer") return sendError(res, 403, "Confirm your email before signing in.");
     clearAttempts(req, email);
     const csrfToken = await createSession(res, rows[0].id);
     return sendJson(res, 200, { user: { id: rows[0].id, name: rows[0].name, email: rows[0].email, role: rows[0].role }, csrfToken });
