@@ -727,9 +727,9 @@ body{display:flex;flex-direction:column;min-height:100vh}
 .footer-actions{grid-area:actions;display:flex;align-items:center;justify-content:flex-end;gap:10px 22px;flex-wrap:wrap}
 .footer-copy{grid-area:copyright;margin:0;padding-top:15px;border-top:1px solid #f0e6da;text-align:center;color:#756b62;font-size:12px;letter-spacing:.015em}
 .footer-links{grid-area:links;display:flex!important;align-items:center;justify-content:center;gap:10px 22px;flex-wrap:wrap;padding-top:14px;border-top:1px solid #eee4d8}
-.footer-links a{color:#645d58!important;font-size:12px;font-weight:700;text-decoration:none}
-.footer-links a:hover{color:#e85238!important}
-.footer-links a[href^="https://wa.me/"]{color:#169b62!important}
+.footer-links a{color:#eee7df!important;font-size:12px;font-weight:700;text-decoration:none}
+.footer-links a:hover,.footer-links a:focus-visible{color:#ffab95!important;text-decoration:underline}
+.footer-links a[href^="https://wa.me/"]{color:#74e7ac!important}
 .footer a,.footer button{cursor:pointer}
 .footer .admin-footer-link{font-weight:700;text-decoration:none}
 a[href],button,[role=button],input[type=submit],input[type=button]{cursor:pointer}
@@ -2378,3 +2378,7 @@ body.booking-success-open{overflow:hidden}
 .booking-live-summary #booking-summary-coupon-mount .coupon-checkout-box{padding:12px;background:#fff;border-radius:15px}
 .booking-live-summary .coupon-summary-discount{color:#167346}
 @media(max-width:480px){.coupon-checkout-box{padding:12px;border-radius:15px}.coupon-checkout-row{grid-template-columns:minmax(0,1fr) auto;gap:6px}.coupon-checkout-row input{font-size:13px}.coupon-checkout-row .btn{padding-inline:13px}.checkout-selection-footer:has(#checkout-coupon-mount:not(:empty)){grid-template-columns:1fr}.checkout-selection-footer:has(#checkout-coupon-mount:not(:empty)) .checkout-continue-link{justify-self:start}}
+
+@media (max-width: 1024px) {
+  .footer-links a { display: inline-flex; align-items: center; min-height: 44px; }
+}
