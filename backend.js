@@ -550,7 +550,7 @@ async function api(req, res, url) {
     const name = cleanText(body.name, 120);
     const email = cleanText(body.email, 254).toLowerCase();
     const submittedPhone = cleanText(body.phone, 40);
-    const phoneDigits = submittedPhone.replace(/\\D/g, "");
+    const phoneDigits = submittedPhone.replace(/\D/g, "");
     const phone = phoneDigits.length === 10 ? "+91" + phoneDigits : phoneDigits.length === 12 && phoneDigits.startsWith("91") ? "+" + phoneDigits : submittedPhone;
     const password = String(body.password || "");
     if (name.length < 2 || !validEmail(email) || !validPhone(phone) || password.length < 10) return sendError(res, 400, "Enter your name, a valid email, an Indian mobile number with 10 digits, and a password with at least 10 characters.");
@@ -578,7 +578,7 @@ async function api(req, res, url) {
     if (!dbReady) return sendError(res, 503, "Account setup is still being prepared.");
     const body = await readJson(req);
     const token = String(body.token || body.code || "").trim();
-    const isCode = /^\\d{4}$/.test(token);
+    const isCode = /^\d{4}$/.test(token);
     const isLegacyLinkToken = /^[a-f0-9]{64}$/i.test(token);
     if (!isCode && !isLegacyLinkToken) return sendError(res, 400, "Enter the 4-digit code from your email.");
     if (!allowLogin(req, "verify-email-code")) return sendError(res, 429, "Too many confirmation attempts. Please wait 15 minutes.");
