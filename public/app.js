@@ -38,7 +38,7 @@ function shell(){
  }
  const footer=$('.footer');
  if(footer){
-  footer.innerHTML='<a class="brand site-brand footer-brand" href="/" aria-label="LuMekH home"><img class="brand-logo" src="/assets/lumekh-logo.png" alt=""><span class="brand-copy"><strong>LuMekH™</strong><small>Love We Make</small></span></a><div class="footer-actions"><button id="install-app" class="install-app-btn" type="button">Install LuMekH app</button></div><p class="footer-copy">© 2026 LuMekH™. All rights reserved.</p>';
+  footer.innerHTML='<a class="brand site-brand footer-brand" href="/" aria-label="LuMekH home"><img class="brand-logo" src="/assets/lumekh-logo.png" alt=""><span class="brand-copy"><strong>LuMekH™</strong><small>Love We Make</small></span></a><div class="footer-actions"><button id="install-app" class="install-app-btn" type="button">Install LuMekH app</button></div><nav class="footer-links" aria-label="Policies and contact"><a href="/Policies">Privacy & policies</a><a href="https://wa.me/919390692757" target="_blank" rel="noopener noreferrer">WhatsApp</a><a href="tel:+919390692757">Call 9390692757</a><a href="mailto:accountdelete@lumekh.com">Account deletion</a></nav><p class="footer-copy">© 2026 LuMekH™. All rights reserved.</p>';
   const install=$('#install-app');
   install?.addEventListener('click',async()=>{
    if(deferredPwaPrompt){deferredPwaPrompt.prompt();await deferredPwaPrompt.userChoice;deferredPwaPrompt=null;return}
