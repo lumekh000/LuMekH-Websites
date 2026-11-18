@@ -2344,3 +2344,10 @@ body.booking-success-open{overflow:hidden}
  .store-catalog-panel .store-product-info{padding-inline:12px!important}
  .store-catalog-panel .store-product-media{width:50px!important;height:50px!important}
 }
+
+/* Keep the open product options menu above neighboring catalog cards. */
+.store-catalog-panel,.store-catalog-panel #products,.store-catalog-panel .product-grid{overflow:visible!important}
+.store-catalog-panel .store-product-card:has(.store-option-trigger[aria-expanded="true"]){position:relative!important;z-index:40!important}
+.store-catalog-panel .store-product-card:has(.store-option-trigger[aria-expanded="true"]):hover{z-index:41!important}
+.store-catalog-panel .store-product-card:has(.store-option-menu:not([hidden])){z-index:40!important}
+.store-catalog-panel .store-option-menu{z-index:42!important}

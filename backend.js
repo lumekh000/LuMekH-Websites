@@ -103,8 +103,8 @@ const schema = [
   "CREATE TABLE IF NOT EXISTS product_variants (id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, product_id BIGINT UNSIGNED NOT NULL, sku VARCHAR(64) NULL UNIQUE, name VARCHAR(160) NOT NULL, attributes_json TEXT NOT NULL, price DECIMAL(10,2) NULL, stock INT NULL, active TINYINT(1) NOT NULL DEFAULT 1, INDEX idx_variant_product (product_id,active), CONSTRAINT fk_variant_product FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
   "CREATE TABLE IF NOT EXISTS product_images (id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, product_id BIGINT UNSIGNED NOT NULL, image_url VARCHAR(1000) NOT NULL, alt_text VARCHAR(180) NOT NULL DEFAULT '', sort_order INT NOT NULL DEFAULT 0, INDEX idx_product_images (product_id,sort_order), CONSTRAINT fk_product_image_product FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
   "CREATE TABLE IF NOT EXISTS media_assets (id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, file_name VARCHAR(255) NOT NULL, mime_type VARCHAR(120) NOT NULL, file_size INT UNSIGNED NOT NULL, is_private TINYINT(1) NOT NULL DEFAULT 0, data MEDIUMBLOB NOT NULL, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, INDEX idx_media_private (is_private,created_at)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
-  "CREATE TABLE IF NOT EXISTS coupons (id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, code VARCHAR(80) NOT NULL UNIQUE, discount_type ENUM('percent','fixed_cart','fixed_product') NOT NULL DEFAULT 'percent', amount DECIMAL(10,2) NOT NULL, minimum_amount DECIMAL(10,2) NOT NULL DEFAULT 0, usage_limit INT NULL, used_count INT NOT NULL DEFAULT 0, expires_at DATETIME NULL, active TINYINT(1) NOT NULL DEFAULT 1, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
-  "CREATE TABLE IF NOT EXISTS coupon_usage (id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, coupon_id BIGINT UNSIGNED NOT NULL, user_id BIGINT UNSIGNED NOT NULL, order_id BIGINT UNSIGNED NOT NULL, used_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE KEY uq_coupon_order (coupon_id,order_id), INDEX idx_coupon_user (coupon_id,user_id), CONSTRAINT fk_coupon_usage_coupon FOREIGN KEY (coupon_id) REFERENCES coupons(id), CONSTRAINT fk_coupon_usage_user FOREIGN KEY (user_id) REFERENCES app_users(id), CONSTRAINT fk_coupon_usage_order FOREIGN KEY (order_id) REFERENCES orders(id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+  "CREATE TABLE IF NOT EXISTS coupons (id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, code VARCHAR(80) NOT NULL UNIQUE, discount_type ENUM('percent','fixed_cart','fixed_product') NOT NULL DEFAULT 'percent', amount DECIMAL(10,2) NOT NULL, minimum_amount DECIMAL(10,2) NOT NULL DEFAULT 0, usage_limit INT NULL, used_count INT NOT NULL DEFAULT 0, expires_at DATETIME NULL, active TINYINT(1) NOT NULL DEFAULT 1, applies_to ENUM('products','bookings','both') NOT NULL DEFAULT 'products', product_ids_json TEXT NULL, service_ids_json TEXT NULL, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+  "CREATE TABLE IF NOT EXISTS coupon_usage (id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, coupon_id BIGINT UNSIGNED NOT NULL, user_id BIGINT UNSIGNED NOT NULL, order_id BIGINT UNSIGNED NULL, booking_id BIGINT UNSIGNED NULL, used_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE KEY uq_coupon_order (coupon_id,order_id), UNIQUE KEY uq_coupon_booking (coupon_id,booking_id), INDEX idx_coupon_user (coupon_id,user_id), CONSTRAINT fk_coupon_usage_coupon FOREIGN KEY (coupon_id) REFERENCES coupons(id), CONSTRAINT fk_coupon_usage_user FOREIGN KEY (user_id) REFERENCES app_users(id), CONSTRAINT fk_coupon_usage_order FOREIGN KEY (order_id) REFERENCES orders(id), CONSTRAINT fk_coupon_usage_booking FOREIGN KEY (booking_id) REFERENCES bookings(id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
   "CREATE TABLE IF NOT EXISTS customer_addresses (id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, user_id BIGINT UNSIGNED NOT NULL, label VARCHAR(60) NOT NULL DEFAULT 'Home', full_name VARCHAR(160) NOT NULL, phone VARCHAR(40) NOT NULL, address VARCHAR(500) NOT NULL, city VARCHAR(120) NOT NULL, region VARCHAR(120) NOT NULL DEFAULT '', postal_code VARCHAR(24) NOT NULL, country VARCHAR(80) NOT NULL DEFAULT 'India', is_default TINYINT(1) NOT NULL DEFAULT 0, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, INDEX idx_address_user (user_id), CONSTRAINT fk_address_user FOREIGN KEY (user_id) REFERENCES app_users(id) ON DELETE CASCADE) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
   "CREATE TABLE IF NOT EXISTS wishlists (user_id BIGINT UNSIGNED NOT NULL, product_id BIGINT UNSIGNED NOT NULL, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (user_id,product_id), CONSTRAINT fk_wishlist_user FOREIGN KEY (user_id) REFERENCES app_users(id) ON DELETE CASCADE, CONSTRAINT fk_wishlist_product FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
   "CREATE TABLE IF NOT EXISTS product_reviews (id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, product_id BIGINT UNSIGNED NOT NULL, user_id BIGINT UNSIGNED NOT NULL, rating TINYINT UNSIGNED NOT NULL, title VARCHAR(160) NOT NULL DEFAULT '', body VARCHAR(2000) NOT NULL DEFAULT '', status ENUM('pending','approved','rejected') NOT NULL DEFAULT 'pending', created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE KEY uq_review_user_product (product_id,user_id), INDEX idx_review_product (product_id,status), CONSTRAINT fk_review_product FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE, CONSTRAINT fk_review_user FOREIGN KEY (user_id) REFERENCES app_users(id) ON DELETE CASCADE) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
@@ -151,6 +151,11 @@ async function initializeDatabase() {
       ["booking_resources","google_refresh_token_enc","TEXT NULL"],
       ["booking_resources","google_calendar_id","VARCHAR(255) NOT NULL DEFAULT 'primary'"],
       ["bookings","total_price","DECIMAL(10,2) NOT NULL DEFAULT 0"],
+      ["bookings","coupon_code","VARCHAR(80) NULL"],
+      ["bookings","discount_total","DECIMAL(10,2) NOT NULL DEFAULT 0"],
+      ["coupons","applies_to","ENUM('products','bookings','both') NOT NULL DEFAULT 'products'"],
+      ["coupons","product_ids_json","TEXT NULL"],
+      ["coupons","service_ids_json","TEXT NULL"],
       ["products","sku","VARCHAR(64) NULL"],
       ["products","sale_price","DECIMAL(10,2) NULL"],
       ["products","category_id","BIGINT UNSIGNED NULL"],
@@ -184,6 +189,12 @@ async function initializeDatabase() {
       const [columns] = await dbPool.execute("SELECT COUNT(*) AS found FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=? AND COLUMN_NAME=?", [table,column]);
       if (Number(columns[0].found) === 0) await dbPool.query("ALTER TABLE `" + table + "` ADD COLUMN `" + column + "` " + definition);
     }
+    const [[couponUsageOrderColumn]] = await dbPool.query("SELECT IS_NULLABLE AS nullable FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='coupon_usage' AND COLUMN_NAME='order_id'");
+    if (couponUsageOrderColumn && couponUsageOrderColumn.nullable !== "YES") await dbPool.query("ALTER TABLE coupon_usage MODIFY COLUMN order_id BIGINT UNSIGNED NULL");
+    const [[couponUsageBookingColumn]] = await dbPool.query("SELECT COUNT(*) AS found FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='coupon_usage' AND COLUMN_NAME='booking_id'");
+    if (Number(couponUsageBookingColumn.found) === 0) await dbPool.query("ALTER TABLE coupon_usage ADD COLUMN booking_id BIGINT UNSIGNED NULL");
+    const [[couponUsageBookingIndex]] = await dbPool.query("SELECT COUNT(*) AS found FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='coupon_usage' AND INDEX_NAME='uq_coupon_booking'");
+    if (Number(couponUsageBookingIndex.found) === 0) await dbPool.query("ALTER TABLE coupon_usage ADD UNIQUE KEY uq_coupon_booking (coupon_id,booking_id)");
     await dbPool.query("INSERT IGNORE INTO store_settings (setting_key,setting_value) VALUES ('currency','INR'),('currency_symbol','₹'),('tax_enabled','0'),('tax_rate','0'),('tax_label','GST'),('shipping_flat_rate','0'),('shipping_free_threshold','0'),('shipping_pickup_enabled','1'),('shipping_local_delivery_enabled','0'),('shipping_local_delivery_rate','0'),('coupon_enabled','1'),('store_name','LuMekH™'),('low_stock_threshold','5')");
     const [ownerRows] = await dbPool.execute("SELECT id FROM app_users WHERE LOWER(email)=? LIMIT 1",[adminEmail]);
     if (ownerRows.length) {
@@ -342,6 +353,39 @@ function couponDiscount(coupon, subtotal) {
   if (!coupon || subtotal < Number(coupon.minimum_amount || 0)) return 0;
   const raw = coupon.discount_type === "percent" ? subtotal * Number(coupon.amount) / 100 : Number(coupon.amount);
   return Math.max(0, Math.min(subtotal, Math.round(raw * 100) / 100));
+}
+function couponAllowsContext(coupon, context) {
+  return coupon.applies_to === "both" || coupon.applies_to === context;
+}
+function couponIds(value) {
+  try { const ids = typeof value === "string" ? JSON.parse(value || "[]") : value; return Array.isArray(ids) ? [...new Set(ids.map(Number).filter(id => Number.isInteger(id) && id > 0))] : []; }
+  catch (_) { return []; }
+}
+function couponEligibleSubtotal(coupon, context, lines) {
+  if (!couponAllowsContext(coupon, context)) return 0;
+  const allowed = context === "products" ? couponIds(coupon.product_ids_json) : couponIds(coupon.service_ids_json);
+  const eligible = (lines || []).filter(line => !allowed.length || allowed.includes(Number(context === "products" ? line.productId : line.serviceId)));
+  return Math.round(eligible.reduce((sum, line) => sum + Math.max(0, Number(line.amount || 0)), 0) * 100) / 100;
+}
+function normalizeCouponInput(body) {
+  const code = cleanText(body.code, 80).toUpperCase();
+  const discountType = body.discountType === "fixed" || body.discount_type === "fixed_cart" ? "fixed_cart" : "percent";
+  const amount = Number(body.amount), minimumAmount = Number(body.minimumAmount ?? body.minimum_amount ?? 0);
+  const appliesTo = ["products", "bookings", "both"].includes(body.appliesTo || body.applies_to) ? (body.appliesTo || body.applies_to) : "products";
+  const productIds = couponIds(body.productIds ?? body.product_ids_json), serviceIds = couponIds(body.serviceIds ?? body.service_ids_json);
+  const usageValue = body.usageLimit ?? body.usage_limit;
+  const usageLimit = usageValue === "" || usageValue === null || usageValue === undefined ? null : Number(usageValue);
+  const expiryValue = cleanText(body.expiresAt ?? body.expires_at, 40);
+  const expiresAt = expiryValue ? (expiryValue.length === 10 ? expiryValue + " 23:59:59" : expiryValue.replace("T", " ").slice(0, 19)) : null;
+  const active = body.active === undefined ? true : Boolean(body.active);
+  if (!/^[A-Z0-9_-]{3,80}$/.test(code)) throw Object.assign(Error("Use 3–80 letters, numbers, hyphens, or underscores for the code."), {status:400});
+  if (!Number.isFinite(amount) || amount <= 0 || (discountType === "percent" && amount > 100)) throw Object.assign(Error("Enter a valid discount. Percentage discounts must be 100% or less."), {status:400});
+  if (!Number.isFinite(minimumAmount) || minimumAmount < 0) throw Object.assign(Error("Minimum spend must be zero or more."), {status:400});
+  if (usageLimit !== null && (!Number.isInteger(usageLimit) || usageLimit < 1)) throw Object.assign(Error("Usage limit must be a positive whole number or left blank."), {status:400});
+  if (expiresAt && Number.isNaN(Date.parse(expiresAt))) throw Object.assign(Error("Choose a valid expiry date."), {status:400});
+  if (appliesTo === "products" && serviceIds.length) throw Object.assign(Error("This coupon is for products only."), {status:400});
+  if (appliesTo === "bookings" && productIds.length) throw Object.assign(Error("This coupon is for bookings only."), {status:400});
+  return {code,discountType,amount,minimumAmount,usageLimit,expiresAt,active,appliesTo,productIds,serviceIds};
 }
 
 function googleTokenKey(){return createHash("sha256").update(String(process.env.GOOGLE_TOKEN_ENCRYPTION_KEY||process.env.DB_PASSWORD||"")).digest()}
@@ -732,17 +776,29 @@ async function api(req, res, url) {
   }
   if (req.method === "POST" && route === "/api/coupons/validate") {
     if (!dbReady) return sendError(res,503,"Store is being set up.");
-    const body=await readJson(req), code=cleanText(body.code,80).toUpperCase(), subtotal=Number(body.subtotal);
+    const body=await readJson(req), code=cleanText(body.code,80).toUpperCase(), context=body.context==="bookings"?"bookings":"products";
     const settings=await readStoreSettings();
     if(settings.coupon_enabled==="0")return sendError(res,400,"Coupons are not available at checkout.");
-    if(!code||!Number.isFinite(subtotal)||subtotal<0)return sendError(res,400,"Enter a valid coupon code and basket.");
+    if(!code)return sendError(res,400,"Enter a coupon code.");
     const [[coupon]]=await dbPool.execute("SELECT * FROM coupons WHERE code=? AND active=1 LIMIT 1",[code]);
     if(!coupon)return sendError(res,404,"That coupon code is not valid.");
     if(coupon.expires_at && new Date(coupon.expires_at).getTime()<Date.now())return sendError(res,400,"That coupon has expired.");
     if(coupon.usage_limit!==null && Number(coupon.used_count)>=Number(coupon.usage_limit))return sendError(res,400,"That coupon has reached its usage limit.");
-    const discount=couponDiscount(coupon,subtotal);
-    if(discount<=0)return sendError(res,400,"Your basket does not meet this coupon’s minimum spend.");
-    return sendJson(res,200,{code:coupon.code,discount,discountType:coupon.discount_type,message:"Coupon applied."});
+    if(!couponAllowsContext(coupon,context))return sendError(res,400,context==="bookings"?"This coupon is for products only.":"This coupon is for bookings only.");
+    let lines=[],subtotal=0;
+    if(context==="products"){
+      const items=Array.isArray(body.items)?body.items.slice(0,30):[];
+      if(!items.length)return sendError(res,400,"Add products before applying a coupon.");
+      for(const item of items){const productId=Number(item.productId),quantity=Number(item.quantity),variantId=Number(item.variantId||0);if(!Number.isInteger(productId)||productId<1||!Number.isInteger(quantity)||quantity<1||quantity>25)return sendError(res,400,"One of the basket items is not valid.");const [[product]]=await dbPool.execute("SELECT id,price,sale_price,active,product_type FROM products WHERE id=? LIMIT 1",[productId]);if(!product||!product.active)return sendError(res,409,"A product in your basket is no longer available.");let unitPrice=Number(product.sale_price!==null?product.sale_price:product.price);if(product.product_type==="variable"){const [[variant]]=await dbPool.execute("SELECT id,price,sale_price FROM product_variants WHERE id=? AND product_id=? AND active=1 LIMIT 1",[variantId,productId]);if(!variant)return sendError(res,400,"Choose a valid product option.");unitPrice=Number(variant.sale_price!==null?variant.sale_price:variant.price??unitPrice)}const amount=unitPrice*quantity;subtotal+=amount;lines.push({productId,amount})}
+    }else{
+      const serviceId=Number(body.serviceId),dates=Array.isArray(body.dates)?[...new Set(body.dates)].slice(0,31):[],dateCount=Math.max(1,dates.length),extras=Array.isArray(body.extras)?body.extras.slice(0,20):[];if(!Number.isInteger(serviceId)||serviceId<1)return sendError(res,400,"Choose a service before applying a coupon.");const [[service]]=await dbPool.execute("SELECT id,price,duration_minutes,booking_mode FROM services WHERE id=? AND active=1 LIMIT 1",[serviceId]);if(!service)return sendError(res,404,"That service is not available.");let total=Number(service.price||0)*dateCount;const durationDays=service.booking_mode==="daily"?Math.max(1,Math.ceil(Number(service.duration_minutes||1440)/1440)):1;for(const extra of extras){const id=Number(extra.id),quantity=Number(extra.quantity||1);if(!Number.isInteger(id)||id<1||!Number.isInteger(quantity)||quantity<1)continue;const [[row]]=await dbPool.execute("SELECT price,sale_price,price_per_day,active FROM service_extras WHERE id=? AND service_id=? LIMIT 1",[id,serviceId]);if(!row||!row.active)continue;total+=Number(row.sale_price!==null?row.sale_price:row.price)*quantity*(Number(row.price_per_day)?durationDays:1)}subtotal=total;lines=[{serviceId,amount:total}];
+    }
+    const eligibleSubtotal=couponEligibleSubtotal(coupon,context,lines);
+    if(subtotal<Number(coupon.minimum_amount||0))return sendError(res,400,"Your basket does not meet this coupon’s minimum spend.");
+    if(eligibleSubtotal<=0)return sendError(res,400,"This coupon does not apply to the items you selected.");
+    const discount=Math.max(0,Math.min(eligibleSubtotal,Math.round((coupon.discount_type==="percent"?eligibleSubtotal*Number(coupon.amount)/100:Number(coupon.amount))*100)/100));
+    if(discount<=0)return sendError(res,400,"Your basket does not meet this coupon’s requirements.");
+    return sendJson(res,200,{code:coupon.code,discount,subtotal,eligibleSubtotal,total:Math.max(0,subtotal-discount),discountType:coupon.discount_type,message:"Coupon applied."});
   }
   if (req.method === "GET" && route === "/api/wishlist") {
     const session=await getSession(req);if(!session)return sendError(res,401,"Sign in to view your wishlist.");
@@ -978,10 +1034,26 @@ async function api(req, res, url) {
         });
       }));
       if (conflicts) { await conn.rollback(); return sendError(res, 409, "One or more selected dates or times are already booked."); }
-      const bookingTotal = occurrences.reduce((sum, occurrence,index) => sum + Number(service.price || 0) + extras.reduce((extraSum, extra) => extraSum + Number(extra.unitPrice||0) * Number(extra.quantity||1) * (Number(extra.price_per_day) ? durationDays : (index === 0 ? 1 : 0)), 0), 0);
+      const bookingSubtotal = occurrences.reduce((sum, occurrence,index) => sum + Number(service.price || 0) + extras.reduce((extraSum, extra) => extraSum + Number(extra.unitPrice||0) * Number(extra.quantity||1) * (Number(extra.price_per_day) ? durationDays : (index === 0 ? 1 : 0)), 0), 0);
+      let bookingDiscount=0,coupon=null,couponCode=cleanText(body.couponCode,80).toUpperCase();
+      if(couponCode){
+        const [[couponSetting]]=await conn.execute("SELECT setting_value FROM store_settings WHERE setting_key='coupon_enabled' LIMIT 1");if(couponSetting?.setting_value==="0"){await conn.rollback();return sendError(res,400,"Coupons are not available at checkout.")}
+        const [[foundCoupon]]=await conn.execute("SELECT * FROM coupons WHERE code=? AND active=1 LIMIT 1 FOR UPDATE",[couponCode]);
+        if(!foundCoupon){await conn.rollback();return sendError(res,400,"That coupon is no longer valid.")}
+        coupon=foundCoupon;
+        if(!couponAllowsContext(coupon,"bookings")){await conn.rollback();return sendError(res,400,"This coupon is not valid for bookings.")}
+        if(coupon.expires_at&&new Date(coupon.expires_at).getTime()<Date.now()){await conn.rollback();return sendError(res,400,"That coupon has expired.")}
+        if(coupon.usage_limit!==null&&Number(coupon.used_count)>=Number(coupon.usage_limit)){await conn.rollback();return sendError(res,400,"That coupon has reached its usage limit.")}
+        if(bookingSubtotal<Number(coupon.minimum_amount||0)){await conn.rollback();return sendError(res,400,"Your booking does not meet this coupon’s minimum spend.")}
+        const allowedServices=couponIds(coupon.service_ids_json);
+        if(allowedServices.length&&!allowedServices.includes(serviceId)){await conn.rollback();return sendError(res,400,"That coupon does not apply to this service.")}
+        bookingDiscount=Math.min(bookingSubtotal,Math.round((coupon.discount_type==="percent"?bookingSubtotal*Number(coupon.amount)/100:Number(coupon.amount))*100)/100);
+      }
+      const bookingTotal=Math.max(0,bookingSubtotal-bookingDiscount);
       const bookingDates = occurrences.map(item => ({date:item.date,endDate:item.endDate,time:item.time,startsAt:item.startsAt.toISOString()}));
       const first = occurrences[0].startsAt.toISOString().slice(0,19).replace("T"," ");
-      const [result] = await conn.execute("INSERT INTO bookings (user_id,service_id,starts_at,notes,booking_dates_json,booking_extras_json,total_price,resource_id,customer_full_name,customer_phone,customer_address,customer_city,customer_postal_code) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", [session.user.id,serviceId,first,notes,JSON.stringify(bookingDates),JSON.stringify(extras.map(x=>({id:x.id,name:x.name,price:Number(x.price),salePrice:x.sale_price===null?null:Number(x.sale_price),unitPrice:Number(x.unitPrice),quantity:Number(x.quantity),maxQuantity:Number(x.max_quantity),imageUrl:x.image_url||null,durationMinutes:0,pricePerDay:Boolean(Number(x.price_per_day))}))),bookingTotal.toFixed(2),resourceId,fullName,phone,address,city,postalCode]);
+      const [result] = await conn.execute("INSERT INTO bookings (user_id,service_id,starts_at,notes,booking_dates_json,booking_extras_json,total_price,resource_id,customer_full_name,customer_phone,customer_address,customer_city,customer_postal_code,coupon_code,discount_total) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", [session.user.id,serviceId,first,notes,JSON.stringify(bookingDates),JSON.stringify(extras.map(x=>({id:x.id,name:x.name,price:Number(x.price),salePrice:x.sale_price===null?null:Number(x.sale_price),unitPrice:Number(x.unitPrice),quantity:Number(x.quantity),maxQuantity:Number(x.max_quantity),imageUrl:x.image_url||null,durationMinutes:0,pricePerDay:Boolean(Number(x.price_per_day))}))),bookingTotal.toFixed(2),resourceId,fullName,phone,address,city,postalCode,coupon?.code||null,bookingDiscount.toFixed(2)]);
+      if(coupon){await conn.execute("INSERT INTO coupon_usage (coupon_id,user_id,order_id,booking_id) VALUES (?,?,NULL,?)",[coupon.id,session.user.id,result.insertId]);await conn.execute("UPDATE coupons SET used_count=used_count+1 WHERE id=?",[coupon.id]);}
       await conn.execute("UPDATE app_users SET name=?,phone=?,address=?,city=?,postal_code=? WHERE id=? AND role='customer'", [fullName,phone,address,city,postalCode,session.user.id]);
       await conn.commit();
 const serviceSubtotal=Number((Number(service.price||0)*occurrences.length).toFixed(2)),extrasTotal=Number((bookingTotal-serviceSubtotal).toFixed(2));const bookingEvent={bookingId:Number(result.insertId),status:"requested",createdAt:new Date().toISOString(),currency:"INR",customer:{fullName,email,phone,address,city,postalCode},service:{serviceId:Number(service.id),name:service.name,bookingMode:service.booking_mode,durationMinutes:Number(service.duration_minutes),bufferMinutes:Number(service.buffer_minutes||0),unitPrice:Number(Number(service.price||0).toFixed(2))},provider:{resourceId:resourceId?Number(resourceId):null,name:resourceName},bookingDates:bookingDates.map(slot=>{const daily=service.booking_mode==="daily",endClock=slot.time&&/^\\d{2}:\\d{2}$/.test(slot.time)?(()=>{const parts=slot.time.split(":").map(Number),total=parts[0]*60+parts[1]+durationMinutes;return String(Math.floor(total/60)%24).padStart(2,"0")+":"+String(total%60).padStart(2,"0")})():null,lastDate=daily&&slot.endDate?new Date(Date.parse(slot.endDate+"T00:00:00Z")-86400000).toISOString().slice(0,10):slot.date;return {date:slot.date,endDate:slot.endDate||null,lastDate,time:slot.time,endTime:daily?null:endClock,startsAt:slot.startsAt,endsAt:daily?null:new Date(Date.parse(slot.startsAt)+durationMinutes*60000).toISOString(),durationMinutes:daily?null:durationMinutes,durationDays:daily?durationDays:null,bufferMinutes:daily?0:Number(service.buffer_minutes||0)}}),startsAt:bookingDates.map(slot=>slot.startsAt),extras:extras.map(extra=>{const quantity=Number(extra.quantity||1),unitPrice=Number(extra.unitPrice||0),pricePerDay=Boolean(Number(extra.price_per_day)),lineTotal=unitPrice*quantity*(pricePerDay?durationDays*occurrences.length:1);return {extraId:Number(extra.id),name:extra.name,quantity,unitPrice:Number(unitPrice.toFixed(2)),pricePerDay,lineTotal:Number(lineTotal.toFixed(2))}}),notes,total:Number(bookingTotal.toFixed(2)),subtotal:Number((serviceSubtotal+extrasTotal).toFixed(2)),serviceSubtotal,extrasSubtotal:extrasTotal};bookingEvent.summary=formatBookingWebhookSummary(bookingEvent);enqueueWebhookEvent("booking.created",bookingEvent).catch(error=>console.error("Booking webhook enqueue failed:",error.message));
@@ -995,7 +1067,7 @@ const serviceSubtotal=Number((Number(service.price||0)*occurrences.length).toFix
         catch (mailError) { console.error("Booking receipt email failed:", mailError.message); }
       }
       const calendarSynced = await syncGoogleBooking(resourceId, result.insertId, service, bookingDates, extras, {name:fullName,phone,email});
-      return sendJson(res, 201, { message: "Booking request saved for " + bookingDates.length + (bookingDates.length === 1 ? " date." : " dates.") + (emailSent ? " A confirmation email was sent." : ""), bookingId: result.insertId, totalPrice: bookingTotal, emailSent, calendarSynced });
+      return sendJson(res, 201, { message: "Booking request saved for " + bookingDates.length + (bookingDates.length === 1 ? " date." : " dates.") + (emailSent ? " A confirmation email was sent." : ""), bookingId: result.insertId, subtotal:bookingSubtotal,discount:bookingDiscount,totalPrice: bookingTotal, emailSent, calendarSynced });
     } catch (error) {
       await conn.rollback();
       throw error;
@@ -1064,7 +1136,10 @@ const serviceSubtotal=Number((Number(service.price||0)*occurrences.length).toFix
         lines.push({id:product.id,name:product.name,displayName:product.name+(variant?" · "+variant.name:""),price:unitPrice,quantity,stock,type,variantId:variant?variant.id:null,sku:variant?variant.sku:product.sku,imageUrl:variant?.image_url||product.image_url});
       }
       if (!fullName || !phone || !address || !postalCode) { await conn.rollback(); return sendError(res, 400, "Complete your full name, mobile number, address, and PIN code."); }
-      const [order] = await conn.execute("INSERT INTO orders (user_id,total,full_name,phone,address,city,postal_code,subtotal) VALUES (?,?,?,?,?,?,?,?)", [session.user.id,total,fullName,phone,address,city,postalCode,total]);
+      const subtotal=total,couponCode=cleanText(body.couponCode,80).toUpperCase();let discount=0,coupon=null;
+      if(couponCode){const [[couponSetting]]=await conn.execute("SELECT setting_value FROM store_settings WHERE setting_key='coupon_enabled' LIMIT 1");if(couponSetting?.setting_value==="0"){await conn.rollback();return sendError(res,400,"Coupons are not available at checkout.")}const [[foundCoupon]]=await conn.execute("SELECT * FROM coupons WHERE code=? AND active=1 LIMIT 1 FOR UPDATE",[couponCode]);if(!foundCoupon){await conn.rollback();return sendError(res,400,"That coupon is no longer valid.")}coupon=foundCoupon;if(!couponAllowsContext(coupon,"products")){await conn.rollback();return sendError(res,400,"This coupon is not valid for products.")}if(coupon.expires_at&&new Date(coupon.expires_at).getTime()<Date.now()){await conn.rollback();return sendError(res,400,"That coupon has expired.")}if(coupon.usage_limit!==null&&Number(coupon.used_count)>=Number(coupon.usage_limit)){await conn.rollback();return sendError(res,400,"That coupon has reached its usage limit.")}if(subtotal<Number(coupon.minimum_amount||0)){await conn.rollback();return sendError(res,400,"Your basket does not meet this coupon’s minimum spend.")}const eligible=lines.filter(line=>!couponIds(coupon.product_ids_json).length||couponIds(coupon.product_ids_json).includes(Number(line.id))).reduce((sum,line)=>sum+line.price*line.quantity,0);if(eligible<=0){await conn.rollback();return sendError(res,400,"That coupon does not apply to the products in your basket.")}discount=Math.min(eligible,Math.round((coupon.discount_type==="percent"?eligible*Number(coupon.amount)/100:Number(coupon.amount))*100)/100);total=Math.max(0,subtotal-discount)}
+      const [order] = await conn.execute("INSERT INTO orders (user_id,total,full_name,phone,address,city,postal_code,subtotal,discount_total,coupon_code) VALUES (?,?,?,?,?,?,?,?,?,?)", [session.user.id,total,fullName,phone,address,city,postalCode,subtotal,discount,coupon?.code||null]);
+      if(coupon){await conn.execute("INSERT INTO coupon_usage (coupon_id,user_id,order_id,booking_id) VALUES (?,?,?,NULL)",[coupon.id,session.user.id,order.insertId]);await conn.execute("UPDATE coupons SET used_count=used_count+1 WHERE id=?",[coupon.id]);}
       await conn.execute("UPDATE app_users SET name=?,phone=?,address=?,city=?,postal_code=? WHERE id=? AND role='customer'", [fullName,phone,address,city,postalCode,session.user.id]);
       for (const line of lines) {
         const lineTotal = line.price * line.quantity;
@@ -1207,6 +1282,27 @@ const orderEvent={orderId:Number(order.insertId),status:"new",createdAt:new Date
     }
     const retryDelivery=route.match(/^\/api\/admin\/integrations\/deliveries\/(\d+)\/retry$/);
     if(req.method==="POST"&&retryDelivery){const [result]=await dbPool.execute("UPDATE webhook_deliveries SET status='pending',attempts=0,response_status=NULL,next_attempt_at=UTC_TIMESTAMP() WHERE id=? AND status='failed'",[Number(retryDelivery[1])]);if(!result.affectedRows)return sendError(res,409,"Only failed deliveries can be retried.");processWebhookQueue().catch(error=>console.error("Webhook retry failed:",error.message));return sendJson(res,202,{message:"Webhook delivery queued for retry."})}
+    if (req.method === "GET" && route === "/api/admin/coupons") {
+      const [rows] = await dbPool.query("SELECT id,code,discount_type,amount,minimum_amount,usage_limit,used_count,expires_at,active,applies_to,product_ids_json,service_ids_json,created_at FROM coupons ORDER BY created_at DESC,id DESC");
+      return sendJson(res,200,{coupons:rows.map(row=>({...row,productIds:couponIds(row.product_ids_json),serviceIds:couponIds(row.service_ids_json)}))});
+    }
+    if ((req.method === "POST" && route === "/api/admin/coupons") || (req.method === "PATCH" && /^\/api\/admin\/coupons\/\d+$/.test(route))) {
+      let input;try{input=normalizeCouponInput(await readJson(req))}catch(error){return sendError(res,error.status||400,error.message||"Enter valid coupon details.")}
+      if(input.productIds.length){const [[found]]=await dbPool.execute("SELECT COUNT(*) AS total FROM products WHERE id IN ("+input.productIds.map(()=>"?").join(",")+")",input.productIds);if(Number(found.total)!==input.productIds.length)return sendError(res,400,"One or more selected products do not exist.")}
+      if(input.serviceIds.length){const [[found]]=await dbPool.execute("SELECT COUNT(*) AS total FROM services WHERE id IN ("+input.serviceIds.map(()=>"?").join(",")+")",input.serviceIds);if(Number(found.total)!==input.serviceIds.length)return sendError(res,400,"One or more selected services do not exist.")}
+      const values=[input.code,input.discountType,input.amount,input.minimumAmount,input.usageLimit,input.expiresAt,input.active?1:0,input.appliesTo,input.productIds.length?JSON.stringify(input.productIds):null,input.serviceIds.length?JSON.stringify(input.serviceIds):null];
+      try{
+        if(req.method==="POST"){
+          const [result]=await dbPool.execute("INSERT INTO coupons (code,discount_type,amount,minimum_amount,usage_limit,expires_at,active,applies_to,product_ids_json,service_ids_json) VALUES (?,?,?,?,?,?,?,?,?,?)",values);
+          return sendJson(res,201,{message:"Coupon created.",couponId:result.insertId});
+        }
+        const id=Number(route.split("/").pop()),[[existing]]=await dbPool.execute("SELECT id FROM coupons WHERE id=? LIMIT 1",[id]);if(!existing)return sendError(res,404,"Coupon not found.");
+        await dbPool.execute("UPDATE coupons SET code=?,discount_type=?,amount=?,minimum_amount=?,usage_limit=?,expires_at=?,active=?,applies_to=?,product_ids_json=?,service_ids_json=? WHERE id=?",[...values,id]);
+        return sendJson(res,200,{message:"Coupon updated.",couponId:id});
+      }catch(error){if(error.code==="ER_DUP_ENTRY")return sendError(res,409,"That coupon code already exists.");throw error}
+    }
+    const couponRoute=route.match(/^\/api\/admin\/coupons\/(\d+)$/);
+    if(req.method==="DELETE"&&couponRoute){const id=Number(couponRoute[1]),conn=await dbPool.getConnection();try{await conn.beginTransaction();const [[coupon]]=await conn.execute("SELECT id FROM coupons WHERE id=? FOR UPDATE",[id]);if(!coupon){await conn.rollback();return sendError(res,404,"Coupon not found.")}await conn.execute("DELETE FROM coupon_usage WHERE coupon_id=?",[id]);await conn.execute("DELETE FROM coupons WHERE id=?",[id]);await conn.commit();return sendJson(res,200,{message:"Coupon deleted."})}catch(error){await conn.rollback();throw error}finally{conn.release()}}
 
     if (req.method === "GET" && route === "/api/admin/summary") {
       const [rows] = await dbPool.query("SELECT (SELECT COUNT(*) FROM app_users WHERE role='customer' AND is_deleted=0) AS customers,(SELECT COUNT(*) FROM products WHERE active=1) AS products,(SELECT COUNT(*) FROM services WHERE active=1) AS services,(SELECT COUNT(*) FROM bookings WHERE status='requested') AS pending_bookings,(SELECT COUNT(*) FROM orders WHERE status='new') AS new_orders");
@@ -1564,7 +1660,7 @@ const orderEvent={orderId:Number(order.insertId),status:"new",createdAt:new Date
     const deleteBookingMatch=route.match(/^\/api\/admin\/bookings\/(\d+)$/);
     if(req.method==="DELETE"&&deleteBookingMatch){
       const id=Number(deleteBookingMatch[1]),conn=await dbPool.getConnection();let resetBookingNumbers=false;
-      try{await conn.beginTransaction();const [[booking]]=await conn.execute("SELECT id,status FROM bookings WHERE id=? FOR UPDATE",[id]);if(!booking){await conn.rollback();return sendError(res,404,"Booking not found.")}if(booking.status!=="cancelled"){await conn.rollback();return sendError(res,409,"Only archived (cancelled) bookings can be deleted.")}await conn.execute("DELETE FROM google_calendar_events WHERE booking_id=?",[id]);await conn.execute("DELETE FROM bookings WHERE id=?",[id]);const [[remaining]]=await conn.query("SELECT COUNT(*) AS total FROM bookings");resetBookingNumbers=Number(remaining.total)===0;await conn.commit()}catch(error){await conn.rollback();throw error}finally{conn.release()}
+      try{await conn.beginTransaction();const [[booking]]=await conn.execute("SELECT id,status FROM bookings WHERE id=? FOR UPDATE",[id]);if(!booking){await conn.rollback();return sendError(res,404,"Booking not found.")}if(booking.status!=="cancelled"){await conn.rollback();return sendError(res,409,"Only archived (cancelled) bookings can be deleted.")}await conn.execute("DELETE FROM google_calendar_events WHERE booking_id=?",[id]);await conn.execute("DELETE FROM coupon_usage WHERE booking_id=?",[id]);await conn.execute("DELETE FROM bookings WHERE id=?",[id]);const [[remaining]]=await conn.query("SELECT COUNT(*) AS total FROM bookings");resetBookingNumbers=Number(remaining.total)===0;await conn.commit()}catch(error){await conn.rollback();throw error}finally{conn.release()}
       if(resetBookingNumbers){try{await dbPool.query("ALTER TABLE bookings AUTO_INCREMENT = 1")}catch(error){console.error("Could not reset booking numbering after archive cleanup:",error.message)}}
       return sendJson(res,200,{message:resetBookingNumbers?"Archived booking deleted. The next booking number will start at #1.":"Archived booking deleted."});
     }
@@ -1655,12 +1751,14 @@ const cleanPageRoutes = Object.freeze({
   "/reset-password": { file: "reset-password.html", path: "/Reset-Password" },
   "/verify": { file: "verify.html", path: "/Verify" },
   "/verify-email": { file: "verify.html", path: "/Verify" },
+  "/policies": { file: "policies.html", path: "/Policies" },
   "/admin/crm": { file: "admin/crm.html", path: "/Admin/CRM" },
   "/admin/integrations": { file: "admin/integrations.html", path: "/Admin/Integrations" },
   "/admin/products": { file: "admin/products.html", path: "/Admin/Products" },
   "/admin/media": { file: "admin/media.html", path: "/Admin/Media" },
   "/admin/pdfs": { file: "admin/pdfs.html", path: "/Admin/PDFs" },
   "/admin/services": { file: "admin/services.html", path: "/Admin/Services" },
+  "/admin/coupons": { file: "admin/coupons.html", path: "/Admin/Coupons" },
   "/admin/bookings": { file: "admin/bookings.html", path: "/Admin/Bookings" },
   "/lmh-admin": { file: "admin/login.html", path: "/lmh-admin" }
 });
@@ -1676,6 +1774,14 @@ const legacyPageRoutes = Object.freeze({
   "/forgot-password.html": "/Forgot-Password",
   "/reset-password.html": "/Reset-Password",
   "/verify.html": "/Verify",
+  "/privacy-policy": "/Policies#privacy",
+  "/privacy-policy.html": "/Policies#privacy",
+  "/booking-policy": "/Policies#bookings",
+  "/booking-policy.html": "/Policies#bookings",
+  "/product-policy": "/Policies#product-orders",
+  "/product-policy.html": "/Policies#product-orders",
+  "/account-deletion": "/Policies#deletion",
+  "/account-deletion.html": "/Policies#deletion",
   "/admin/crm.html": "/Admin/CRM",
   "/admin/integrations.html": "/Admin/Integrations",
   "/admin/products.html": "/Admin/Products",
