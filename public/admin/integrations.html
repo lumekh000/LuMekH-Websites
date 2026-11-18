@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#fff9ef">
 <title>Integrations | LuMekH™ Admin</title>
-<link rel="stylesheet" href="/app.css?v=20261116-webhook-full-payload-edit-1">
-<script defer src="/app.js?v=20261116-webhook-full-payload-edit-1"></script>
-<script defer src="/admin-integrations.js?v=20261116-webhook-full-payload-edit-1"></script>
+<link rel="stylesheet" href="/app.css?v=20261118-webhook-customer-event-1">
+<script defer src="/app.js?v=20261118-webhook-customer-event-1"></script>
+<script defer src="/admin-integrations.js?v=20261118-webhook-customer-event-1"></script>
 <link rel="icon" type="image/png" href="/assets/lumekh-logo.png?v=brand-20261113">
 </head>
 <body class="admin-body"><div class="admin-app-shell">
@@ -47,11 +47,11 @@
       <article class="panel integration-card webhook-card">
         <div class="integration-card-top"><span class="integration-icon coral">↗</span><span class="integration-pill">SIGNED · HTTPS</span></div>
         <p class="eyebrow">EVENT DELIVERY</p><h2>Webhooks</h2>
-        <p class="muted">Receive order and booking notifications in your automation tool. Payloads include event IDs, item details and totals; they omit customer contact details.</p>
+        <p class="muted">Receive order, booking and verified customer registration events in your automation tool. Payloads include relevant customer contact details, items or services, booking dates and totals. Passwords and verification codes are never sent.</p>
         <form id="webhook-form" class="integration-webhook-form">
           <label for="webhook-name">Connection name</label><input id="webhook-name" name="name" maxlength="100" placeholder="e.g. Order automation" required>
           <label for="webhook-url">HTTPS destination URL</label><input id="webhook-url" name="url" type="url" inputmode="url" placeholder="https://hooks.example.com/lumekh" required>
-          <fieldset><legend>Events to send</legend><label class="integration-check"><input type="checkbox" name="events" value="order.created" checked><span>Order created</span></label><label class="integration-check"><input type="checkbox" name="events" value="booking.created"><span>Booking created</span></label></fieldset>
+          <fieldset><legend>Events to send</legend><label class="integration-check"><input type="checkbox" name="events" value="order.created" checked><span>Order created</span></label><label class="integration-check"><input type="checkbox" name="events" value="booking.created"><span>Booking created</span></label><label class="integration-check"><input type="checkbox" name="events" value="customer.registered"><span>Customer registered</span></label></fieldset>
           <button class="btn primary" type="submit">＋ Add webhook</button>
         </form>
         <div id="webhook-secret-reveal" class="integration-secret-reveal" hidden></div>
