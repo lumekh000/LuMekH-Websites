@@ -292,6 +292,17 @@ async function sendMail(to, subject, html) {
   await transport.sendMail({ from: process.env.MAIL_FROM || "LuMekH™ <noreply@lumekh.com>", to, subject, html });
   return true;
 }
+async function sendAdminActivityEmail(subject, html) {
+  if (!adminEmail || !process.env.SMTP_PASS) return false;
+  try {
+    return await sendMail(adminEmail, subject, html);
+  } catch (error) {
+    // Admin notifications must never undo a customer-facing action that has
+    // already been committed to the database.
+    console.error("Admin activity email failed:", error.message);
+    return false;
+  }
+}
 function escapeHtml(value) {
   return String(value || "").replace(/[&<>"']/g, char => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]));
 }
@@ -666,7 +677,7 @@ async function api(req, res, url) {
       await conn.commit();
       clearAttempts(req, "verify-email-code");
       const [rows] = await conn.execute("SELECT id,name,email,phone,address,city,postal_code,role,email_verified,created_at FROM app_users WHERE id=?", [userId]);
-      if(rows[0]?.role==="customer"&&Number(rows[0].email_verified)===1){sendCustomerWelcomeEmail(rows[0],originFor(req)).catch(error=>console.error("Customer welcome email failed:",error.message));const customerEvent={customerId:Number(rows[0].id),status:"verified",registeredAt:new Date().toISOString(),customer:{fullName:rows[0].name,email:rows[0].email,phone:rows[0].phone||"",address:rows[0].address||"",city:rows[0].city||"",postalCode:rows[0].postal_code||""}};customerEvent.summary=formatCustomerWebhookSummary(customerEvent);enqueueWebhookEvent("customer.registered",customerEvent).catch(error=>console.error("Customer registration webhook enqueue failed:",error.message));}
+      if(rows[0]?.role==="customer"&&Number(rows[0].email_verified)===1){sendCustomerWelcomeEmail(rows[0],originFor(req)).catch(error=>console.error("Customer welcome email failed:",error.message));const customerEvent={customerId:Number(rows[0].id),status:"verified",registeredAt:new Date().toISOString(),customer:{fullName:rows[0].name,email:rows[0].email,phone:rows[0].phone||"",address:rows[0].address||"",city:rows[0].city||"",postalCode:rows[0].postal_code||""}};customerEvent.summary=formatCustomerWebhookSummary(customerEvent);const customerNoticeHtml=receiptEmailHtml(originFor(req),{eyebrow:"NEW CUSTOMER ACCOUNT",title:"A customer verified their account",intro:"A new LuMekH customer account is ready.",reference:"Customer #"+customerEvent.customerId,details:[["Name",customerEvent.customer.fullName],["Email",customerEvent.customer.email],["Mobile",customerEvent.customer.phone],["Address",customerEvent.customer.address],["City / PIN",[customerEvent.customer.city,customerEvent.customer.postalCode].filter(Boolean).join(" · ")]],totals:[],note:"This is an admin notification. No sign-in or email verification codes are included."});sendAdminActivityEmail("New LuMekH customer · #"+customerEvent.customerId,customerNoticeHtml).catch(()=>{});enqueueWebhookEvent("customer.registered",customerEvent).catch(error=>console.error("Customer registration webhook enqueue failed:",error.message));}
       return sendJson(res, 200, { message: "Email confirmed. You can now sign in.", role: rows[0].role });
     } catch (error) {
       await conn.rollback();
@@ -1086,6 +1097,7 @@ const serviceSubtotal=Number((Number(service.price||0)*occurrences.length).toFix
         const bookingEmailHtml=receiptEmailHtml(originFor(req),{eyebrow:"BOOKING REQUEST RECEIVED",title:"Your booking request is in",intro:"We received your request. It is awaiting confirmation from the LuMekH team; payment will be arranged separately.",reference:"Booking #"+result.insertId,details:[["Customer",fullName],["Email",email],["Mobile",phone],["Provider",resourceName||"LuMekH"],["Address",address],["City / PIN",[city,postalCode].filter(Boolean).join(" · ")],...scheduleDetails,["Notes",notes],["Coupon",coupon?.code||""]],items:bookingItems,totals:[["Service",receiptMoney(serviceSubtotal)],["Extras",receiptMoney(extras.reduce((sum,extra)=>sum+Number(extra.unitPrice||0)*Number(extra.quantity||1)*(Number(extra.price_per_day)?durationDays*occurrences.length:1),0))],...(bookingDiscount?[["Discount","−"+receiptMoney(bookingDiscount)]]:[]),["Estimated total",receiptMoney(bookingTotal)]],note:"This is a booking request, not a confirmed appointment. We will contact you to confirm availability and next steps."});
         try { emailSent = await sendMail(email,"LuMekH™ booking request received · #"+result.insertId,bookingEmailHtml); }
         catch (mailError) { console.error("Booking receipt email failed:", mailError.message); }
+        await sendAdminActivityEmail("New LuMekH booking · #"+result.insertId,bookingEmailHtml);
       }
       const calendarSynced = await syncGoogleBooking(resourceId, result.insertId, service, bookingDates, extras, {name:fullName,phone,email});
       return sendJson(res, 201, { message: "Booking request saved for " + bookingDates.length + (bookingDates.length === 1 ? " date." : " dates.") + (emailSent ? " A confirmation email was sent." : ""), bookingId: result.insertId, subtotal:bookingSubtotal,discount:bookingDiscount,totalPrice: bookingTotal, emailSent, calendarSynced });
@@ -1177,6 +1189,7 @@ const orderEvent={orderId:Number(order.insertId),status:"new",createdAt:new Date
         const orderEmailHtml=receiptEmailHtml(originFor(req),{eyebrow:"ORDER REQUEST RECEIVED",title:"Your order request is in",intro:"We received your order request. Our team will contact you to confirm the next steps; payment will be arranged separately.",reference:"Order #"+order.insertId,details:[["Customer",fullName],["Email",email],["Mobile",phone],["Delivery address",address],["City / PIN",[city,postalCode].filter(Boolean).join(" · ")],["Coupon",coupon?.code||""]],items:lines.map(line=>({name:line.displayName,description:line.sku?"SKU · "+line.sku:"",quantity:line.quantity,amount:receiptMoney(line.price*line.quantity)})),totals:[["Subtotal",receiptMoney(subtotal)],...(discount?[["Discount","−"+receiptMoney(discount)]]:[]),["Order total",receiptMoney(total)]],note:"Your products are prepared after an order is received. Shipping timing and charges depend on your delivery location and courier partner."});
         try { emailSent = await sendMail(email,"LuMekH™ order received · #"+order.insertId,orderEmailHtml); }
         catch (mailError) { console.error("Order receipt email failed:", mailError.message); }
+        await sendAdminActivityEmail("New LuMekH order · #"+order.insertId,orderEmailHtml);
       }
       return sendJson(res,201,{message:"Order request saved. Payment will be confirmed separately.",orderId:order.insertId,total,emailSent});
     } catch (error) {
