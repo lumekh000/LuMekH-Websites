@@ -529,7 +529,8 @@ async function api(req, res, url) {
       }
       await conn.commit();
       clearAttempts(req, "verify-email-code");
-      const [rows] = await conn.execute("SELECT role FROM app_users WHERE id=?", [userId]);
+      const [rows] = await conn.execute("SELECT id,name,email,role,email_verified FROM app_users WHERE id=?", [userId]);
+      if(rows[0]?.role==="customer"&&Number(rows[0].email_verified)===1)enqueueWebhookEvent("customer.registered",{customerId:Number(rows[0].id),status:"verified",registeredAt:new Date().toISOString(),customer:{fullName:rows[0].name,email:rows[0].email}}).catch(error=>console.error("Customer registration webhook enqueue failed:",error.message));
       return sendJson(res, 200, { message: "Email confirmed. You can now sign in.", role: rows[0].role });
     } catch (error) {
       await conn.rollback();
