@@ -22,15 +22,15 @@
     const nameLabel=element("label","integration-edit-field","Connection name"),nameInput=element("input");nameInput.type="text";nameInput.maxLength=100;nameInput.required=true;nameInput.value=item.name;nameLabel.append(nameInput);
     const urlLabel=element("label","integration-edit-field","HTTPS destination URL"),urlInput=element("input");urlInput.type="url";urlInput.required=true;urlInput.value=item.url;urlLabel.append(urlInput);
     const events=element("fieldset","integration-edit-events"),legend=element("legend","","Events to send");events.append(legend);
-    for(const [value,label] of [["order.created","Order created"],["booking.created","Booking created"],["customer.registered","Customer registered"]]){const row=element("label","integration-edit-event"),input=element("input");input.type="checkbox";input.value=value;input.checked=(item.events||[]).includes(value);row.append(input,document.createTextNode(label));events.append(row)}
+    for(const [value,label] of [["order.created","Orders: created and updated"],["booking.created","Bookings: created and updated"],["customer.registered","Customers: registered and updated"]]){const row=element("label","integration-edit-event"),input=element("input");input.type="checkbox";input.value=value;input.checked=(item.events||[]).includes(value);row.append(input,document.createTextNode(label));events.append(row)}
     const actions=element("div","integration-edit-actions"),cancel=element("button","btn compact","Cancel"),save=element("button","btn primary","Save changes");cancel.type="button";save.type="submit";
     cancel.addEventListener("click",()=>dialog.close());actions.append(cancel,save);form.append(heading,nameLabel,urlLabel,events,actions);
     form.addEventListener("submit",async event=>{event.preventDefault();save.disabled=true;try{const result=await request("/api/admin/integrations/webhooks/"+item.id,{method:"PATCH",body:JSON.stringify({name:nameInput.value,url:urlInput.value,events:[...events.querySelectorAll("input:checked")].map(input=>input.value)})});dialog.close();setAlert(result.message);await load()}catch(error){setAlert(error.message,true)}finally{save.disabled=false}});
     dialog.append(form);dialog.addEventListener("close",()=>dialog.remove(),{once:true});dialog.addEventListener("click",event=>{if(event.target===dialog)dialog.close()});document.body.append(dialog);dialog.showModal();nameInput.focus();
   }
-  const webhookEventOptions=[["order.created","Order created"],["booking.created","Booking created"],["customer.registered","Customer registered"]];
+  const webhookEventOptions=[["order.created","Order created"],["order.updated","Order updated"],["booking.created","Booking created"],["booking.updated","Booking updated"],["customer.registered","Customer registered"],["customer.updated","Customer updated"]];
   function sendTest(item){
-    const available=webhookEventOptions.filter(([value])=>(item.events||[]).includes(value));
+    const available=webhookEventOptions.filter(([value])=>(item.events||[]).includes(value)||(value==="order.updated"&&(item.events||[]).includes("order.created"))||(value==="booking.updated"&&(item.events||[]).includes("booking.created"))||(value==="customer.updated"&&(item.events||[]).includes("customer.registered")));
     if(!available.length){setAlert("Edit this endpoint and enable an event before sending a test.",true);return}
     const dialog=element("dialog","integration-edit-dialog"),form=element("form","integration-edit-form"),heading=element("h2","","Send an existing record to n8n");
     const note=element("p","muted","Choose an existing record. Its full details, including customer contact information, will be sent to this endpoint with a test flag.");
