@@ -2174,6 +2174,7 @@ body.booking-success-open{overflow:hidden}
 .booking-review-submit .checkout-submit{width:auto;min-width:min(100%,220px);margin:0}
 .booking-review-feedback:empty,.booking-review-payment-note:empty{display:none}
 .booking-review-feedback .message{margin:12px 0 0;padding:11px 13px;border:1.5px solid #b84032;border-radius:14px;background:#fff0ec;color:#782b22;font-weight:700;line-height:1.45}
+.booking-review-feedback .message:empty{display:none}
 .booking-review-payment-note{display:block;margin-top:12px;color:#6f6760;line-height:1.5}
 .booking-review-grid .booking-review-total span{max-width:28ch;line-height:1.35}
 .booking-success-ticket strong:nth-child(2){color:#267344;font-size:12px;letter-spacing:.04em}
