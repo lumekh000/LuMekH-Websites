@@ -24,7 +24,7 @@
 <div class="admin-main-area">
   <header class="admin-headerbar"><div><small>LUMEKH · PRIVATE WORKSPACE</small><strong>Integrations</strong></div><span class="admin-header-context">MCP & webhooks</span></header>
   <main class="admin-page admin-content integrations-page">
-    <section class="admin-heading"><div><p class="eyebrow">CONNECT YOUR WORKFLOWS</p><h1>Integrations <span class="gradient">studio.</span></h1><p class="muted">Connect AI clients to public catalog data and send signed order or booking events to your systems.</p></div><span class="secure-chip"><span></span> Admin only</span></section>
+    <section class="admin-heading"><div><p class="eyebrow">CONNECT YOUR WORKFLOWS</p><h1>Integrations <span class="gradient">studio.</span></h1><p class="muted">Connect AI clients to public catalog data and send signed order, booking, and customer events when records are created or updated.</p></div><span class="secure-chip"><span></span> Admin only</span></section>
     <div id="integration-alert" class="integration-alert" role="status" aria-live="polite" hidden></div>
     <section class="integration-feature-grid">
       <article class="panel integration-card mcp-card">
@@ -51,7 +51,7 @@
         <form id="webhook-form" class="integration-webhook-form">
           <label for="webhook-name">Connection name</label><input id="webhook-name" name="name" maxlength="100" placeholder="e.g. Order automation" required>
           <label for="webhook-url">HTTPS destination URL</label><input id="webhook-url" name="url" type="url" inputmode="url" placeholder="https://hooks.example.com/lumekh" required>
-          <fieldset><legend>Events to send</legend><label class="integration-check"><input type="checkbox" name="events" value="order.created" checked><span>Order created</span></label><label class="integration-check"><input type="checkbox" name="events" value="booking.created"><span>Booking created</span></label><label class="integration-check"><input type="checkbox" name="events" value="customer.registered"><span>Customer registered</span></label></fieldset>
+          <fieldset><legend>Events to send</legend><label class="integration-check"><input type="checkbox" name="events" value="order.created" checked><span>Orders: created and updated</span></label><label class="integration-check"><input type="checkbox" name="events" value="booking.created"><span>Bookings: created and updated</span></label><label class="integration-check"><input type="checkbox" name="events" value="customer.registered"><span>Customers: registered and updated</span></label></fieldset>
           <button class="btn primary" type="submit">＋ Add webhook</button>
         </form>
         <div id="webhook-secret-reveal" class="integration-secret-reveal" hidden></div>
