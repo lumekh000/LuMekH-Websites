@@ -545,6 +545,7 @@ async function api(req, res, url) {
 
   if (req.method === "POST" && route === "/api/auth/register") {
     if (!dbReady) return sendError(res, 503, "Account setup is still being prepared. Please try again shortly.");
+    if (!process.env.SMTP_PASS) return sendError(res, 503, "Email confirmation is temporarily unavailable. Please try again later.");
     const body = await readJson(req);
     const name = cleanText(body.name, 120);
     const email = cleanText(body.email, 254).toLowerCase();
@@ -555,13 +556,16 @@ async function api(req, res, url) {
     const conn = await dbPool.getConnection();
     try {
       await conn.beginTransaction();
-      const [result] = await conn.execute("INSERT INTO app_users (name,email,phone,password_hash,email_verified) VALUES (?,?,?,?,1)", [name, email, phone, passwordHash]);
+      const [result] = await conn.execute("INSERT INTO app_users (name,email,phone,password_hash,email_verified) VALUES (?,?,?,?,0)", [name, email, phone, passwordHash]);
+      const userId = Number(result.insertId);
+      const token = randomBytes(32).toString("hex");
+      await conn.execute("INSERT INTO email_tokens (token_hash,user_id,purpose,expires_at) VALUES (?,?,'verify',DATE_ADD(UTC_TIMESTAMP(), INTERVAL 24 HOUR))", [hashToken(token), userId]);
+      const link = originFor(req) + "/Verify-Email?token=" + encodeURIComponent(token);
+      const logo = originFor(req) + "/assets/lumekh-logo.png";
+      const html = "<div style='margin:0;padding:36px 14px;background:#fff8ef;font-family:Arial,Helvetica,sans-serif;color:#22212a'><table role='presentation' cellpadding='0' cellspacing='0' style='width:100%;max-width:600px;margin:0 auto;background:#fff;border:1px solid #f0dfcf;border-radius:22px;overflow:hidden'><tr><td style='padding:24px 30px;background:#111114;color:#fff'><img src='" + logo + "' width='48' height='48' alt='LuMekH logo' style='display:inline-block;vertical-align:middle;margin-right:12px;border:0'><span style='display:inline-block;vertical-align:middle;font-size:22px;font-weight:700'>LuMekH™<span style='display:block;margin-top:4px;color:#f4c7d6;font-size:10px;font-weight:600;letter-spacing:2px'>LOVE WE MAKE</span></span></td></tr><tr><td style='padding:36px 30px 30px'><p style='margin:0 0 10px;color:#e64f3d;font-size:11px;font-weight:700;letter-spacing:2px'>CUSTOMER ACCOUNT</p><h1 style='margin:0 0 14px;color:#19191d;font-size:28px;line-height:1.2'>Confirm your email</h1><p style='margin:0;color:#66636d;font-size:16px;line-height:1.65'>Click below to confirm your email address and finish creating your LuMekH account.</p><table role='presentation' cellpadding='0' cellspacing='0' style='margin:26px 0'><tr><td style='border-radius:999px;background:#ed5039'><a href='" + link + "' style='display:inline-block;padding:15px 28px;border:1px solid #ed5039;border-radius:999px;color:#fff;text-decoration:none;font-size:15px;font-weight:700'>Confirm email</a></td></tr></table><p style='margin:0;color:#716d76;font-size:14px;line-height:1.6'>This link expires in 24 hours and can only be used once.</p><p style='margin:24px 0 0;color:#9a969e;font-size:12px;line-height:1.6'>If the button doesn’t work, copy and paste this link into your browser:<br><a href='" + link + "' style='color:#6554be;word-break:break-all'>" + link + "</a></p></td></tr><tr><td style='padding:17px 30px;background:#faf8f6;border-top:1px solid #f0ebe5;color:#89858d;font-size:12px'>© 2026 LuMekH™ · Love We Make</td></tr></table></div>";
+      await sendMail(email, "Confirm your LuMekH email", html);
       await conn.commit();
-      const userId=Number(result.insertId),csrfToken=await createSession(res,userId);
-      const customerEvent={customerId:userId,status:"verified",registeredAt:new Date().toISOString(),customer:{fullName:name,email,phone,address:"",city:"",postalCode:""}};
-      customerEvent.summary=formatCustomerWebhookSummary(customerEvent);
-      enqueueWebhookEvent("customer.registered",customerEvent).catch(error=>console.error("Customer registration webhook enqueue failed:",error.message));
-      return sendJson(res, 201, { message: "Account created. You are signed in.", user:{id:userId,name,email,role:"customer"}, csrfToken });
+      return sendJson(res, 201, { message: "Account created. Check your email and confirm the link before signing in." });
     } catch (error) {
       await conn.rollback();
       if (error && error.code === "ER_DUP_ENTRY") return sendError(res, 409, "An account already exists for that email.");
@@ -572,9 +576,9 @@ async function api(req, res, url) {
   if (req.method === "POST" && route === "/api/auth/verify") {
     if (!dbReady) return sendError(res, 503, "Account setup is still being prepared.");
     const body = await readJson(req);
-    const token = String(body.code || "");
-    if (!/^\d{6}$/.test(token)) return sendError(res, 400, "Enter the 6-digit code sent to your email.");
-    if (!allowLogin(req, "verify-email-code")) return sendError(res, 429, "Too many code attempts. Please wait 15 minutes.");
+    const token = String(body.token || body.code || "");
+    if (!/^[a-f0-9]{64}$/i.test(token)) return sendError(res, 400, "This confirmation link is invalid or expired.");
+    if (!allowLogin(req, "verify-email-link")) return sendError(res, 429, "Too many confirmation attempts. Please wait 15 minutes.");
     const conn = await dbPool.getConnection();
     try {
       await conn.beginTransaction();
@@ -589,7 +593,7 @@ async function api(req, res, url) {
         await conn.execute("UPDATE app_users SET role='admin' WHERE id=?", [userId]);
       }
       await conn.commit();
-      clearAttempts(req, "verify-email-code");
+      clearAttempts(req, "verify-email-link");
       const [rows] = await conn.execute("SELECT id,name,email,phone,address,city,postal_code,role,email_verified,created_at FROM app_users WHERE id=?", [userId]);
       if(rows[0]?.role==="customer"&&Number(rows[0].email_verified)===1){const customerEvent={customerId:Number(rows[0].id),status:"verified",registeredAt:new Date().toISOString(),customer:{fullName:rows[0].name,email:rows[0].email,phone:rows[0].phone||"",address:rows[0].address||"",city:rows[0].city||"",postalCode:rows[0].postal_code||""}};customerEvent.summary=formatCustomerWebhookSummary(customerEvent);enqueueWebhookEvent("customer.registered",customerEvent).catch(error=>console.error("Customer registration webhook enqueue failed:",error.message));}
       return sendJson(res, 200, { message: "Email confirmed. You can now sign in.", role: rows[0].role });
@@ -611,7 +615,7 @@ async function api(req, res, url) {
       const failures=recordLoginFailure(req,email);
       return sendError(res,failures>=8?429:401,failures>=8?"Too many incorrect sign-in attempts. Try again later.":"Email or password is incorrect.");
     }
-    if (!rows[0].email_verified && rows[0].role !== "customer") return sendError(res, 403, "Confirm your email before signing in.");
+    if (!rows[0].email_verified) return sendError(res, 403, "Confirm your email before signing in.");
     clearAttempts(req, email);
     const csrfToken = await createSession(res, rows[0].id);
     return sendJson(res, 200, { user: { id: rows[0].id, name: rows[0].name, email: rows[0].email, role: rows[0].role }, csrfToken });
