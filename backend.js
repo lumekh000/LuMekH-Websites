@@ -1200,29 +1200,43 @@ const orderEvent={orderId:Number(order.insertId),status:"new",createdAt:new Date
     }
     if (req.method === "GET" && route === "/api/admin/customers") {
       const q = "%" + cleanText(url.searchParams.get("q"), 80) + "%";
-      const [rows] = await dbPool.execute("SELECT id,name,email,created_at,email_verified FROM app_users WHERE role='customer' AND is_deleted=0 AND (name LIKE ? OR email LIKE ?) ORDER BY created_at DESC LIMIT 200", [q, q]);
+      const [rows] = await dbPool.execute("SELECT id,name,email,phone,created_at,email_verified FROM app_users WHERE role='customer' AND is_deleted=0 AND (name LIKE ? OR email LIKE ?) ORDER BY created_at DESC LIMIT 200", [q, q]);
       return sendJson(res, 200, { customers: rows });
     }
     const customerMatch = route.match(/^\/api\/admin\/customers\/(\d+)$/);
     if (customerMatch && req.method === "PATCH") {
       const id = Number(customerMatch[1]);
       const body = await readJson(req);
-      const email = cleanText(body.email, 254).toLowerCase();
-      if (!validEmail(email)) return sendError(res, 400, "Enter a valid customer email address.");
+      const hasEmail = Object.prototype.hasOwnProperty.call(body, "email");
+      const hasPhone = Object.prototype.hasOwnProperty.call(body, "phone");
+      if (!hasEmail && !hasPhone) return sendError(res, 400, "Provide an email address or mobile number to update.");
+      const email = hasEmail ? cleanText(body.email, 254).toLowerCase() : "";
+      const phone = hasPhone ? cleanText(body.phone, 40) : "";
+      if (hasEmail && !validEmail(email)) return sendError(res, 400, "Enter a valid customer email address.");
+      if (hasPhone && !validPhone(phone)) return sendError(res, 400, "Enter a valid mobile number with 10 to 15 digits.");
       const [[customer]] = await dbPool.execute("SELECT id FROM app_users WHERE id=? AND role='customer' AND is_deleted=0 LIMIT 1", [id]);
       if (!customer) return sendError(res, 404, "Customer not found.");
-      const [[duplicate]] = await dbPool.execute("SELECT id FROM app_users WHERE email=? AND id<>? LIMIT 1", [email, id]);
-      if (duplicate) return sendError(res, 409, "That email is already used by another account.");
+      if (hasEmail) {
+        const [[duplicate]] = await dbPool.execute("SELECT id FROM app_users WHERE email=? AND id<>? LIMIT 1", [email, id]);
+        if (duplicate) return sendError(res, 409, "That email is already used by another account.");
+      }
+      const updates = [];
+      const values = [];
+      if (hasEmail) { updates.push("email=?", "email_verified=1"); values.push(email); }
+      if (hasPhone) { updates.push("phone=?"); values.push(phone); }
+      values.push(id);
       const conn = await dbPool.getConnection();
       try {
         await conn.beginTransaction();
-        await conn.execute("UPDATE app_users SET email=?,email_verified=1 WHERE id=? AND role='customer' AND is_deleted=0", [email, id]);
-        await conn.execute("DELETE FROM app_sessions WHERE user_id=?", [id]);
-        await conn.execute("DELETE FROM email_tokens WHERE user_id=?", [id]);
+        await conn.execute("UPDATE app_users SET " + updates.join(",") + " WHERE id=? AND role='customer' AND is_deleted=0", values);
+        if (hasEmail) {
+          await conn.execute("DELETE FROM app_sessions WHERE user_id=?", [id]);
+          await conn.execute("DELETE FROM email_tokens WHERE user_id=?", [id]);
+        }
         await conn.commit();
       } catch (error) { await conn.rollback(); if (error.code === "ER_DUP_ENTRY") return sendError(res, 409, "That email is already used by another account."); throw error; }
       finally { conn.release(); }
-      return sendJson(res, 200, { message: "Customer email updated. Their existing orders and bookings remain linked to this account." });
+      return sendJson(res, 200, { message: hasEmail ? "Customer email updated. Their existing orders and bookings remain linked to this account." : "Customer mobile number updated." });
     }
     if (customerMatch && req.method === "DELETE") {
       const id = Number(customerMatch[1]);
