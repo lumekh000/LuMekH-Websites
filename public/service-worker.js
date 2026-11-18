@@ -1,4 +1,4 @@
-const CACHE_NAME='lumekh-shell-v36';
+const CACHE_NAME='lumekh-shell-v37';
 const APP_SHELL=['/Home','/app.css','/app.js','/search-toggle.js','/site.webmanifest','/assets/lumekh-logo.png'];
 self.addEventListener('install',event=>{event.waitUntil(caches.open(CACHE_NAME).then(cache=>cache.addAll(APP_SHELL)).then(()=>self.skipWaiting()))});
 self.addEventListener('activate',event=>{event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key!==CACHE_NAME).map(key=>caches.delete(key)))).then(()=>self.clients.claim()))});
@@ -7,6 +7,10 @@ self.addEventListener('fetch',event=>{
  if(request.method!=='GET'||url.origin!==self.location.origin||url.pathname.startsWith('/api/'))return;
  if(request.mode==='navigate'){
   event.respondWith(fetch(request).then(response=>{if(response.ok){const copy=response.clone();caches.open(CACHE_NAME).then(cache=>cache.put(request,copy))}return response}).catch(async()=>await caches.match(request)||await caches.match('/')));
+  return;
+ }
+ if(request.destination==='script'||request.destination==='style'){
+  event.respondWith(fetch(request,{cache:'no-cache'}).then(response=>{if(response.ok){const copy=response.clone();caches.open(CACHE_NAME).then(cache=>cache.put(request,copy))}return response}).catch(async()=>await caches.match(request)));
   return;
  }
  event.respondWith(caches.match(request).then(cached=>{
