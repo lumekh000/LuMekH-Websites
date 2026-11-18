@@ -2354,3 +2354,27 @@ body.booking-success-open{overflow:hidden}
 .store-catalog-panel .store-product-card:has(.store-option-trigger[aria-expanded="true"]):hover{z-index:41!important}
 .store-catalog-panel .store-product-card:has(.store-option-menu:not([hidden])){z-index:40!important}
 .store-catalog-panel .store-option-menu{z-index:42!important}
+
+/* Checkout coupon: compact, clear and placed with the price summary. */
+.coupon-checkout-box{display:grid;gap:9px;width:100%;box-sizing:border-box;margin:0;padding:14px;border:1px solid #eadfd3;border-radius:17px;background:linear-gradient(135deg,#fffaf5 0%,#fff 100%);box-shadow:0 7px 20px rgba(37,26,18,.055)}
+.coupon-checkout-box>label{color:#74685f;font-size:11px;font-weight:800;letter-spacing:.075em;text-transform:uppercase}
+.coupon-checkout-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center}
+.coupon-checkout-row input{width:100%;min-width:0;min-height:44px;box-sizing:border-box;padding:0 12px;border:1px solid #ddd1c6;border-radius:12px;background:#fff;color:#211d19;font:inherit;font-size:14px}
+.coupon-checkout-row input:focus{outline:3px solid rgba(239,79,55,.18);border-color:#ed543b}
+.coupon-checkout-row .btn{min-height:42px;padding:0 17px;border:0;border-radius:12px;background:#ef5038;color:#fff;font-weight:800;box-shadow:0 5px 14px rgba(239,80,56,.19)}
+.coupon-checkout-row #checkout-coupon-remove{border:1px solid #ded2c7;background:#fff;color:#26211e;box-shadow:none}
+.coupon-checkout-box .message{margin:0;font-size:12px;line-height:1.45}
+.coupon-checkout-box .message:empty{display:none}
+.coupon-checkout-box .message.is-success{color:#167346}
+.coupon-checkout-box .message.is-error{color:#b63222}
+.coupon-checkout-total{display:grid;gap:6px;padding-top:9px;border-top:1px solid #eadfd3;font-size:13px}
+.coupon-result-row,.coupon-result-total{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.coupon-result-row{color:#167346}
+.coupon-result-total{padding-top:7px;border-top:1px dashed #e5d9ce;font-weight:800}
+.coupon-result-total strong{font-size:16px}
+#checkout-coupon-mount{grid-column:1/-1;width:100%}
+.checkout-selection-footer:has(#checkout-coupon-mount:not(:empty)){display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center}
+.booking-live-summary #booking-summary-coupon-mount{margin-top:12px}
+.booking-live-summary #booking-summary-coupon-mount .coupon-checkout-box{padding:12px;background:#fff;border-radius:15px}
+.booking-live-summary .coupon-summary-discount{color:#167346}
+@media(max-width:480px){.coupon-checkout-box{padding:12px;border-radius:15px}.coupon-checkout-row{grid-template-columns:minmax(0,1fr) auto;gap:6px}.coupon-checkout-row input{font-size:13px}.coupon-checkout-row .btn{padding-inline:13px}.checkout-selection-footer:has(#checkout-coupon-mount:not(:empty)){grid-template-columns:1fr}.checkout-selection-footer:has(#checkout-coupon-mount:not(:empty)) .checkout-continue-link{justify-self:start}}
